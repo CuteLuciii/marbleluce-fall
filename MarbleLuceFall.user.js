@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.19
+// @version      6.20
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -238,7 +238,8 @@
             { key: 'trayLift', label: 'Tray under the tile',
               hint: 'The attack tray sits right under the king tile, whatever the size of the window, instead of at the bottom of the pane.' },
             { key: 'attackAssist', def: false, label: 'Attack when free',
-              hint: 'Opt-in. Replaces the attack button with one that also works while you are bidding or in a tile: it sends !unbid once, sits out a lava cooldown, waits until your marble is free and then presses the game\'s own attack button. Click it again to cancel. If something bids for you automatically, it says so instead of waiting in vain.' },
+              hint: 'Opt-in. Replaces the attack button with one that also works while you are bidding or in a tile: it sends !unbid once, sits out a lava cooldown (your autobid keeps playing meanwhile), waits until your marble is free and then presses the game\'s own attack button. Click it again to cancel. If something bids for you automatically, it says so instead of waiting in vain. Try again until King: after a miss (a lava bubble, the wall holding) it starts over by itself until you sit on the throne. Every miss costs points, a lava pop takes the value of the bubble, so this can burn through a lot.',
+              sub: { key: 'attackRetry', type: 'choice', label: 'After a miss', def: 0, options: [[0, 'Stop'], [1, 'Try again until King']] } },
         ]},
         // 17 is TOLL_MAX of section 9c, which is declared further down and not reachable here.
         { title: 'On the throne', blurb: 'Toll and beverages, set by themselves the moment you take the crown.', throne: true, items: [
@@ -6982,8 +6983,16 @@
     const ASSIST_REBID_MS = 8000;              // a bid still/again there this long after the unbid
     const ASSIST_NATIVE_WAIT_MS = 10000;       // how long the game may take to release its button
     const ASSIST_DEAD_REASONS = ['current_king', 'not_logged_in', 'already_in_king_tile'];
+    // Try again until King (6.20): after the press the attack is watched (phase 'watch'). The
+    // server reports already_in_king_tile while the marble runs; once that is gone without the
+    // crown, it was a miss, and the next try starts from the top: a lava cooldown after a pop is
+    // sat out like any other, a fresh !unbid is allowed once per try.
+    const ASSIST_SETTLE_MS = 10000;            // no run reported this long after the press: judged anyway
+    const ASSIST_RUN_MAX_MS = 2 * 60 * 1000;   // an attack is over in seconds; this is only the lid
+    const ASSIST_RETRY_GAP_MS = 8000;          // never two presses closer than this
     const assist = { active: false, phase: '', started: 0, clearStart: 0, unbidSent: false, unbidAt: 0,
-                     lavaUntil: 0, timer: 0, note: '', noteUntil: 0 };
+                     lavaUntil: 0, timer: 0, note: '', noteUntil: 0,
+                     tries: 0, pressedAt: 0, sawRun: false, lastPressAt: 0 };
 
     function nativeAttack() {
         const content = document.querySelector('.mcf-king-action-content');
@@ -7025,19 +7034,25 @@
         if (assist.active) {
             state = assist.phase === 'rebid' ? 'warn' : 'wait';
             text = { unbid: 'UNBIDDING\u2026', tile: 'WAITING: IN TILE', lava: 'WAITING: LAVA ' + lavaLeft(),
-                     rebid: 'BID CAME BACK', attack: 'ATTACKING\u2026', wait: 'WAITING\u2026' }[assist.phase] || 'WAITING\u2026';
+                     rebid: 'BID CAME BACK', attack: 'ATTACKING\u2026', watch: 'ATTACK RUNNING\u2026',
+                     wait: 'WAITING\u2026' }[assist.phase] || 'WAITING\u2026';
+            if (assist.tries > 1) text = 'TRY ' + assist.tries + ' \u00b7 ' + text;
             title = assist.phase === 'rebid'
                 ? 'A bid came back after the unbid — is something bidding for you automatically? Click to cancel.'
-                : 'Waiting until your marble is free, then attacking. Click to cancel.';
+                : settings.attackRetry
+                    ? 'Attacking until you are King, try ' + assist.tries + '. Click to cancel.'
+                    : 'Waiting until your marble is free, then attacking. Click to cancel.';
         } else if (noteOn) {
             state = 'warn'; text = assist.note; title = assist.note; enabled = false;
         } else if (nativeEnabled(native)) {
-            text = (native.textContent || 'ATTACK').trim(); title = 'Attack the throne';
+            text = (native.textContent || 'ATTACK').trim();
+            title = settings.attackRetry ? 'Attack the throne, and again after every miss until you are King' : 'Attack the throne';
         } else if (nativeReasons(native).some(r => ASSIST_DEAD_REASONS.includes(r))) {
             text = (native.textContent || '').trim(); title = text; enabled = false;
         } else {
-            text = 'ATTACK WHEN FREE';
-            title = 'Unbids if needed, waits until your marble is free, then attacks. Click again to cancel.';
+            text = settings.attackRetry ? 'ATTACK UNTIL KING' : 'ATTACK WHEN FREE';
+            title = 'Unbids if needed, waits until your marble is free, then attacks'
+                  + (settings.attackRetry ? ', and again after every miss until you are King' : '') + '. Click again to cancel.';
         }
         if (copy.textContent !== text) copy.textContent = text;
         if (copy.title !== title) copy.title = title;
@@ -7056,7 +7071,8 @@
     function assistStop(note) {
         clearTimeout(assist.timer);
         Object.assign(assist, { active: false, phase: '', clearStart: 0, unbidSent: false, unbidAt: 0, lavaUntil: 0,
-                                note: note || '', noteUntil: note ? Date.now() + 4000 : 0 });
+                                note: note || '', noteUntil: note ? Date.now() + 4000 : 0,
+                                tries: 0, pressedAt: 0, sawRun: false });
         redrawAssist();
         if (note) setTimeout(redrawAssist, 4100);
     }
@@ -7064,11 +7080,31 @@
     function assistClick() {
         if (assist.active) { assistStop(''); return; }
         const native = nativeAttack();
-        if (nativeEnabled(native)) { native.click(); return; }   // free already: the game's own click
+        // Free already: the game's own click — and with "try again" the watching starts there.
+        if (nativeEnabled(native) && !settings.attackRetry) { native.click(); return; }
         Object.assign(assist, { active: true, phase: 'wait', started: Date.now(), clearStart: 0,
-                                unbidSent: false, unbidAt: 0, lavaUntil: 0, note: '', noteUntil: 0 });
+                                unbidSent: false, unbidAt: 0, lavaUntil: 0, note: '', noteUntil: 0,
+                                tries: 1, pressedAt: 0, sawRun: false });
+        if (nativeEnabled(native)) { pressAttack(native); return; }
         redrawAssist();
         assistTick();
+    }
+
+    // The game's own attack click. Without "try again" that is the end of it; with it, the attack
+    // is watched until it is over, and a miss starts the next try (assistTick).
+    function pressAttack(native) {
+        native.click();
+        assist.lastPressAt = Date.now();
+        if (!settings.attackRetry) { assistStop(''); return; }
+        Object.assign(assist, { phase: 'watch', pressedAt: Date.now(), sawRun: false });
+        redrawAssist();
+        clearTimeout(assist.timer);
+        assist.timer = setTimeout(assistTick, ASSIST_POLL_MS);
+    }
+
+    function nextTry(now) {
+        Object.assign(assist, { phase: 'wait', tries: assist.tries + 1, started: now, clearStart: 0,
+                                unbidSent: false, unbidAt: 0, lavaUntil: 0, pressedAt: 0, sawRun: false });
     }
 
     async function readKingMe() {
@@ -7093,7 +7129,19 @@
         const reasons = me && Array.isArray(me.reasons) ? me.reasons : null;
         if (reasons) {
             if (reasons.includes('current_king')) { assistStop("YOU'RE THE KING"); return; }
+            if (assist.phase === 'watch') {
+                const running = reasons.includes('already_in_king_tile');
+                if (running) assist.sawRun = true;
+                const since = now - assist.pressedAt;
+                const over = running ? since > ASSIST_RUN_MAX_MS : (assist.sawRun || since > ASSIST_SETTLE_MS);
+                if (!over) { redrawAssist(); assist.timer = setTimeout(assistTick, ASSIST_POLL_MS); return; }
+                if (running) { assistStop('ATTACK DID NOT END'); return; }
+                nextTry(now);   // a miss: this very answer decides how the next try begins
+            }
             const free = me.state !== 'blocked' && reasons.length === 0;
+            if (free && now - assist.lastPressAt < ASSIST_RETRY_GAP_MS) {
+                redrawAssist(); assist.timer = setTimeout(assistTick, ASSIST_POLL_MS); return;
+            }
             if (free) { assist.phase = 'attack'; redrawAssist(); pressWhenReleased(now); return; }
             if (reasons.includes('lava_cooldown_active')) {
                 // Sat out, nothing cleared: the cooldown only runs down with the clock, and an
@@ -7134,8 +7182,7 @@
             if (!assist.active) return;
             const native = nativeAttack();
             if (nativeEnabled(native)) {
-                native.click();
-                assistStop('');
+                pressAttack(native);
                 return;
             }
             if (Date.now() - since > ASSIST_NATIVE_WAIT_MS) { assist.phase = 'wait'; redrawAssist(); assist.timer = setTimeout(assistTick, ASSIST_POLL_MS); return; }
@@ -7892,7 +7939,10 @@
     function autobidStep(now, priority) {
         if (!settings.autobidButton || !settings.autobidOn) return abSet('off', 'Off.');
         if (kingNow()) return abSet('hold', 'Paused: you are King. Bidding picks up again after your reign.');
-        if (assist.active) return abSet('hold', 'Paused while "Attack when free" is running.');
+        // Not during a lava cooldown (6.20): it runs down with the clock alone, and its three
+        // minutes are tiles worth playing, as the MarbleMind bot does it. The one !unbid comes
+        // once the cooldown is over.
+        if (assist.active && assist.phase !== 'lava') return abSet('hold', 'Paused while "Attack when free" is running.');
         if (!holdsTabLock(now)) return abSet('hold', 'Another tab is bidding for you, this one stands by.');
         if (!tapInstalled) return abSet('alert', 'The lanes cannot be read in this browser, so nothing is bid.');
         if (!lanes.size) {
@@ -9471,12 +9521,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.19';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.20', date: '2026-09-15', items: [
+            'Attack when free can now try again until you are King (Settings, King tile, After a miss). After a lava bubble or a wall that holds, it starts over by itself: sits out the lava cooldown, unbids once, waits until your marble is free and attacks again. The button counts the tries; click it to stop. Every miss costs points.',
+            'While Attack when free sits out a lava cooldown, your autobid keeps playing instead of pausing for three minutes.',
+        ] },
         { v: '6.19', date: '2026-09-15', items: [
             'New settings page, On the throne: the moment you take the crown, your toll can go to a value of your choice by itself, and the beverages you pick are poured as soon as the game unlocks them. Pick one, a few or all 24 (four beverages, three sizes, gold or diamonds); the page adds up what that costs.',
             'Both are opt-in and happen once per reign, never again after a reload, always through the game\'s own buttons. A note on screen says what was done and what the game refused. Careful: beverages spend gold or diamonds for good.',
@@ -9648,7 +9702,7 @@
             { title: 'King tile', items: [
                 'King name and toll stand on the tile; the beverage buttons sit left and right of the attack button. A beverage panel stays open after a purchase, so several can be bought in a row.',
                 'On the throne you can type the toll instead of clicking it up and down.',
-                'Attack when free (opt-in in Settings) waits until your marble is free and attacks for you.',
+                'Attack when free (opt-in in Settings) waits until your marble is free and attacks for you. Set to try again, it starts over after every miss until you are King.',
                 'On the throne (opt-in in Settings) sets your toll and pours the beverages you picked by itself when you take the crown, once per reign. Beverages spend gold or diamonds for good.',
             ] },
             { title: 'Chat', items: [
