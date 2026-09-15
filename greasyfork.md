@@ -13,6 +13,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **Bidding** — unbid in one click, extra ticket chips, autobid with risk protection.
 - **King tile** — the king's name and toll right on the tile; attack when free (opt-in).
 - **Beverage bar** — the beverages as a compact bar, as symbols or with names.
+- **On the throne** — opt-in: when you take the crown, the toll goes to your value and the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).
 - **Enhanced chat** — hide system lines you don't need, text sizes, grouped messages, pop the chat out into a window, a compact cosmetics switch.
 - **Board fit** — the board sizes itself to your screen; see-through board frames.
 - **Settings gear** — one click to all settings, including the game's sound and music (off by default).

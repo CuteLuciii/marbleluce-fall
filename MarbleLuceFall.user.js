@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.18
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, enhanced chat, performance levels, how-to and what’s new.
+// @version      6.19
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -239,6 +239,14 @@
               hint: 'The attack tray sits right under the king tile, whatever the size of the window, instead of at the bottom of the pane.' },
             { key: 'attackAssist', def: false, label: 'Attack when free',
               hint: 'Opt-in. Replaces the attack button with one that also works while you are bidding or in a tile: it sends !unbid once, sits out a lava cooldown, waits until your marble is free and then presses the game\'s own attack button. Click it again to cancel. If something bids for you automatically, it says so instead of waiting in vain.' },
+        ]},
+        // 17 is TOLL_MAX of section 9c, which is declared further down and not reachable here.
+        { title: 'On the throne', blurb: 'Toll and beverages, set by themselves the moment you take the crown.', throne: true, items: [
+            { key: 'throneToll', def: false, label: 'Set the toll',
+              hint: 'Opt-in. The moment you take the crown, the toll goes to this value, through the game\'s own Reduce and Increase buttons. Whatever you change later in the reign stays as you set it.',
+              sub: { key: 'throneTollValue', type: 'range', label: 'Toll', min: 0, max: 17, step: 1, def: 0, unit: '' } },
+            { key: 'throneDrinks', def: false, redraw: true, label: 'Pour beverages',
+              hint: 'Opt-in. The beverages picked below are poured as soon as the game unlocks them, 15 seconds into your reign, each through the game\'s own button. Its limits still apply: every beverage, size and currency once per reign, and only with enough gold or diamonds. Starts with your next reign, never in the middle of one.' },
         ]},
         { title: 'Ticket rail', blurb: 'Rebellion, Unbid, folding and extra chips.', items: [
             { key: 'railGroup', label: 'Rebellion button and folding',
@@ -636,6 +644,11 @@
     // around the king tile go, so the page background shows through. On unless switched off.
     settingDefaults.boardClear = true;
     settings.boardClear = stored.boardClear !== false;
+    // On the throne (6.19): the beverage packages to pour, as "type|size|currency" — a list, not
+    // a switch. Anything else found in storage is dropped rather than guessed at.
+    settingDefaults.throneDrinkSet = [];
+    settings.throneDrinkSet = Array.isArray(stored.throneDrinkSet)
+        ? stored.throneDrinkSet.filter(k => /^(water|lava|milk|acid)\|(small|medium|large)\|(gold|diamonds)$/.test(k)) : [];
 
     // What a lever is set to right now: from the chosen level, or the Custom mix.
     function perfValue(key) {
@@ -1598,6 +1611,43 @@
             margin: 0 0 10px; padding: 10px 12px; border-radius: 9px;
             border: 1px solid #6f5a28; background: rgba(60, 45, 12, 0.35); color: #ffe3a3; font-size: 12px;
         }
+
+        /* === ON THE THRONE (section 7c) === the beverage picker in the settings, and the note
+           on screen after the crown was taken. Button rules hang on .mcfo-set (3.11 lesson). */
+        .mcfo-throne { padding: 12px 14px 13px; margin-top: 10px; transition: opacity 160ms ease; }
+        .mcfo-throne[data-off] { opacity: 0.4; pointer-events: none; }
+        .mcfo-throne__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 11px; }
+        .mcfo-throne__title { font-weight: 700; color: #e6f0f7; font-size: 13.5px; }
+        .mcfo-throne__quick { display: flex; gap: 6px; flex-wrap: wrap; }
+        .mcfo-set .mcfo-throne__quick button {
+            border: 1px solid #2c4254; border-radius: 7px; background: #111f2b; color: #cfe2f2;
+            font: inherit; font-size: 12px; font-weight: 700; line-height: 1; padding: 6px 10px; cursor: pointer;
+        }
+        .mcfo-set .mcfo-throne__quick button:hover { background: #16283a; border-color: #4d7ea6; color: #fff; }
+        .mcfo-throne__grid { display: grid; grid-template-columns: 58px repeat(3, minmax(0, 1fr)); gap: 6px 8px; align-items: center; }
+        .mcfo-throne__col { font-size: 11px; font-weight: 700; color: #9ab0c0; text-align: center; text-transform: uppercase; letter-spacing: 0.04em; }
+        .mcfo-throne__name { font-weight: 800; font-size: 13px; }
+        .mcfo-throne__cell { display: flex; gap: 5px; min-width: 0; }
+        .mcfo-set .mcfo-throne__pick {
+            flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+            border: 1px solid #2c4254; border-radius: 7px; background: #0f1b26; color: #8da2b7;
+            font: inherit; font-size: 12px; font-weight: 700; line-height: 1; padding: 7px 4px; cursor: pointer;
+            font-variant-numeric: tabular-nums; white-space: nowrap;
+        }
+        .mcfo-set .mcfo-throne__pick:hover { border-color: #4d7ea6; color: #fff; }
+        .mcfo-set .mcfo-throne__pick[data-cur="gold"][aria-pressed="true"] { background: #4a3a0e; border-color: #e0b84a; color: #ffe3a3; }
+        .mcfo-set .mcfo-throne__pick[data-cur="diamonds"][aria-pressed="true"] { background: #0f3a4a; border-color: #5fd0f0; color: #c8f2ff; }
+        .mcfo-throne__coin { flex: none; width: 9px; height: 9px; border-radius: 50%; background: #f2c14e; box-shadow: inset 0 0 0 1px #8a6512; }
+        .mcfo-throne__gem { flex: none; width: 7px; height: 7px; transform: rotate(45deg); background: #6fdcff; box-shadow: inset 0 0 0 1px #1d6f8a; }
+        .mcfo-throne__sum { margin-top: 12px; font-size: 12px; color: #8da2b7; }
+        .mcfo-throne__sum b { color: #ffd479; }
+        .mcfo-throne-note {
+            position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 2147483000;
+            max-width: min(560px, 92vw); padding: 10px 14px; border-radius: 10px;
+            border: 1px solid #e0b84a; background: rgba(20, 16, 6, 0.94); color: #ffe9b8;
+            font: 13px/1.45 system-ui, sans-serif; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5); cursor: pointer;
+        }
+        .mcfo-throne-note b { display: block; color: #ffd479; margin-bottom: 3px; }
 
         /* === ATTACK WHEN FREE (section 7b) ===
            The game's button is hidden, not removed — ours forwards the click to it. Ours carries
@@ -6598,10 +6648,10 @@
     const BEV_PENDING_MS = 5000;
     const BEV_RECHECK_MS = [500, 1500, 3000];
 
-    async function pollBeverages() {
-        if (!settings.kingTray) return;
+    // true once the rights were read, false when the game did not answer.
+    async function loadBevRights() {
         try {
-            const res = await fetch('/api/king/beverages/me', { credentials: 'include' });
+            const res = await fetch('/api/king/beverages/me', { credentials: 'include', cache: 'no-store' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             for (const right of data?.rights || []) {
@@ -6610,9 +6660,16 @@
                     price: Number(right.price),
                 });
             }
+            return true;
         } catch (e) {
             if (!bevReported) { bevReported = true; console.warn('[MarbleLuceFall] beverage rights unavailable:', e.message); }
+            return false;
         }
+    }
+
+    async function pollBeverages() {
+        if (!settings.kingTray) return;
+        await loadBevRights();
         // A click whose right is spent now (or in the game's own pending) needs no stand-in.
         for (const [key] of bevPending) {
             const right = bevRights.get(key);
@@ -7085,6 +7142,288 @@
             assist.timer = setTimeout(step, 300);
         };
         step();
+    }
+
+    // =========================================================================================
+    // 7c. ON THE THRONE: TOLL AND BEVERAGES BY THEMSELVES (opt-in, 6.19)
+    // =========================================================================================
+    // The moment you take the crown, two things can happen without a click: the toll goes to a
+    // chosen value, and the beverages picked in the settings are poured. Nothing is assembled
+    // here. The toll goes through the game's Reduce / Increase buttons (stepTollTo, section 9c),
+    // every beverage through the game's own button (nativeBeverageButton, section 7), so every
+    // guard the game has keeps applying: only the King may set the toll, beverages unlock 15 s
+    // into a reign, the balance, once per beverage, size and currency per reign.
+    //
+    // When: on the change to King (the bid area's toll mode, the script-wide King signal), and
+    // once per reign. The reign is told apart by king.capturedAtMs from the snapshot, kept in
+    // localStorage and written BEFORE anything is pressed: a reload in the middle of a reign must
+    // never pour a second time. A reign older than THRONE_FRESH_MS was not "just taken" and is
+    // left alone, and so is one the snapshot cannot name: without knowing the reign, nothing is
+    // bought. Switching the feature on while already King does nothing until the next reign, so
+    // a click in the settings never spends anything by itself.
+    const THRONE_DONE_KEY = 'mcfo_throne_done';
+    const THRONE_FRESH_MS = 3 * 60 * 1000;
+    const THRONE_UNLOCK_MS = 15000;      // the game unlocks beverages this long into a reign
+    const THRONE_TOLL_WAIT_MS = 20000;   // how long the toll controls may take to become editable
+    const THRONE_POUR_MS = 25000;        // how long a greyed-out beverage is tried again
+    const THRONE_NOTE_MS = 15000;
+    const KING_SIGNAL = '[data-role="bid-area"][data-king-toll-mode="true"]';
+    const BEV_ALL_KEYS = BEVERAGES.flatMap(b => BEV_CURRENCIES.flatMap(([c]) => BEV_SIZES.map(([z]) => `${b.type}|${z}|${c}`)));
+    const throne = { king: false, running: false };
+    const nap = ms => new Promise(r => setTimeout(r, ms));
+
+    function bevPrice(key) {
+        const [type, size, currency] = key.split('|');
+        const right = bevRights.get(key);
+        if (Number.isFinite(right?.price)) return right.price;
+        const bev = BEVERAGES.find(b => b.type === type);
+        return bev ? bev[currency][size] : 0;
+    }
+    function bevName(key) {
+        const [type, size, currency] = key.split('|');
+        const bev = BEVERAGES.find(b => b.type === type);
+        const sizeLabel = (BEV_SIZES.find(x => x[0] === size) || [0, size])[1];
+        return `${bev ? bev.label : type} ${sizeLabel} (${currency === 'gold' ? 'Gold' : 'Diamond'})`;
+    }
+
+    // On the 1.5 s beat. Only the change to King counts, including the first look after a load.
+    function throneTick() {
+        const king = !!document.querySelector(KING_SIGNAL);
+        const became = king && !throne.king;
+        throne.king = king;
+        if (!became || throne.running) return;
+        const pour = settings.throneDrinks && settings.throneDrinkSet.length > 0;
+        if (!settings.throneToll && !pour) return;
+        throne.running = true;
+        throneRun(pour)
+            .catch(e => console.warn('[MarbleLuceFall] throne actions failed:', e && e.message))
+            .finally(() => { throne.running = false; });
+    }
+
+    // Right after the capture the snapshot may still name the previous reign for a moment, so
+    // it is asked a few times until it shows a fresh one.
+    async function readFreshReign() {
+        for (let n = 0; n < 5; n++) {
+            try {
+                const res = await fetch('/api/king/snapshot?view=summary', { credentials: 'include', cache: 'no-store' });
+                if (res.ok) {
+                    const at = Number((await res.json())?.king?.capturedAtMs);
+                    if (Number.isFinite(at) && at > 0 && Date.now() - at <= THRONE_FRESH_MS) return at;
+                }
+            } catch (e) {}
+            await nap(2000);
+        }
+        return 0;
+    }
+
+    async function throneRun(pour) {
+        const reign = await readFreshReign();
+        if (!reign) return;
+        let done = '';
+        try { done = localStorage.getItem(THRONE_DONE_KEY) || ''; } catch (e) {}
+        if (done === String(reign)) return;
+        try { localStorage.setItem(THRONE_DONE_KEY, String(reign)); } catch (e) {}
+
+        // Both at once: the toll is set within a second, the beverages wait for their unlock.
+        const jobs = [];
+        if (settings.throneToll) jobs.push(throneToll(settings.throneTollValue).then(line => throneNote([line])));
+        if (pour) jobs.push(throneDrinks(reign, settings.throneDrinkSet.slice()).then(throneNote));
+        await Promise.all(jobs);
+    }
+
+    async function throneToll(value) {
+        const want = Math.max(0, Math.min(TOLL_MAX, Math.round(value)));
+        const until = Date.now() + THRONE_TOLL_WAIT_MS;
+        while (Date.now() < until) {
+            const st = tollState();
+            if (st.canEdit && st.value !== null) {
+                if (st.value === want) return `Toll stays at ${want}`;
+                stepTollTo(want);
+                return `Toll set to ${want}`;
+            }
+            await nap(500);
+        }
+        return 'Toll not set: the game did not open its toll controls in time';
+    }
+
+    async function throneDrinks(reign, wanted) {
+        const wait = reign + THRONE_UNLOCK_MS + 500 - Date.now();
+        if (wait > 0) await nap(wait);
+        if (!await loadBevRights()) return ['Beverages not poured: the game did not say which ones are still available'];
+        const todo = wanted.filter(k => bevRights.get(k)?.state === 'available');
+        const already = wanted.length - todo.length;
+        const pressed = [];
+        const native = key => nativeBeverageButton(...key.split('|'));
+
+        // One at a time, each looked up again: the game may redraw or close its panel after a
+        // purchase. A button that stays grey (not enough gold or diamonds) is given up on after
+        // THRONE_POUR_MS.
+        let opened = false;
+        const until = Date.now() + THRONE_POUR_MS;
+        while (todo.length && Date.now() < until) {
+            let any = false;
+            for (const key of todo.slice()) {
+                const button = native(key);
+                if (!nativeEnabled(button)) continue;
+                forwardClick(button);
+                pressed.push(key);
+                todo.splice(todo.indexOf(key), 1);
+                any = true;
+                await nap(700);
+            }
+            if (!todo.length) break;
+            const toggle = role('beverages-toggle');
+            if (toggle && toggle.getAttribute('aria-expanded') !== 'true' && !todo.some(native)) {
+                // The panel is not mounted: opened the way a person would, closed again below.
+                forwardClick(toggle);
+                opened = true;
+                await nap(400);
+            } else if (!any) await nap(800);
+        }
+        if (opened) {
+            const toggle = role('beverages-toggle');
+            if (toggle && toggle.getAttribute('aria-expanded') === 'true') forwardClick(toggle);
+        }
+
+        // Pressed is not bought: the game's answer counts, read back a moment later.
+        await nap(2000);
+        const read = await loadBevRights();
+        refreshBevPanel();
+        const bought = read ? pressed.filter(k => bevRights.get(k)?.state !== 'available') : pressed;
+        const refused = pressed.filter(k => !bought.includes(k));
+        const lines = [];
+        if (bought.length) lines.push('Poured: ' + bought.map(bevName).join(', '));
+        if (refused.length) lines.push('The game refused: ' + refused.map(bevName).join(', '));
+        if (todo.length) lines.push('Not poured, the button stayed grey (not enough gold or diamonds?): ' + todo.map(bevName).join(', '));
+        if (already) lines.push(already === 1 ? '1 was already bought this reign' : `${already} were already bought this reign`);
+        return lines;
+    }
+
+    // What was done, on screen for a while (a click closes it). Toll and beverages finish at
+    // different times, so the second adds to the note the first opened.
+    let throneNoteTimer = 0;
+    function throneNote(lines) {
+        if (!lines.length) return;
+        console.log('[MarbleLuceFall] on the throne:', lines.join(' | '));
+        let note = document.querySelector('.mcfo-throne-note');
+        if (!note) {
+            note = document.createElement('div');
+            note.className = 'mcfo-throne-note';
+            const head = document.createElement('b');
+            head.textContent = 'On the throne';
+            note.appendChild(head);
+            note.addEventListener('click', () => note.remove());
+            document.body.appendChild(note);
+        }
+        for (const line of lines) {
+            const row = document.createElement('div');
+            row.textContent = line;
+            note.appendChild(row);
+        }
+        clearTimeout(throneNoteTimer);
+        throneNoteTimer = setTimeout(() => note.remove(), THRONE_NOTE_MS);
+    }
+
+    // The settings: what costs what, and a note that nothing of it comes back.
+    function throneNotice() {
+        const note = document.createElement('div');
+        note.className = 'mcfo-set__notice';
+        note.textContent = 'Beverages cost gold or diamonds the moment they are poured, and that cannot be undone: '
+            + 'no refund, no confirm step. Whatever is picked here is bought by itself every time you take the throne, until you switch it off.';
+        return note;
+    }
+
+    function throneDrinksCard() {
+        const card = document.createElement('div');
+        card.className = 'mcfo-set__card mcfo-throne';
+        card.toggleAttribute('data-off', !settings.throneDrinks);
+
+        const head = document.createElement('div');
+        head.className = 'mcfo-throne__head';
+        const title = document.createElement('span');
+        title.className = 'mcfo-throne__title';
+        title.textContent = 'Beverages to pour';
+        const quick = document.createElement('div');
+        quick.className = 'mcfo-throne__quick';
+        head.append(title, quick);
+        card.appendChild(head);
+
+        const picks = [];
+        const sum = document.createElement('div');
+        sum.className = 'mcfo-throne__sum';
+        const redraw = () => {
+            const set = new Set(settings.throneDrinkSet);
+            for (const b of picks) b.setAttribute('aria-pressed', set.has(b._mcfoKey) ? 'true' : 'false');
+            const gold = settings.throneDrinkSet.filter(k => k.endsWith('|gold')).reduce((t, k) => t + bevPrice(k), 0);
+            const dia = settings.throneDrinkSet.filter(k => k.endsWith('|diamonds')).reduce((t, k) => t + bevPrice(k), 0);
+            const n = settings.throneDrinkSet.length;
+            sum.innerHTML = n
+                ? `<b>${n}</b> of ${BEV_ALL_KEYS.length} picked: <b>${number(gold)}</b> gold and <b>${number(dia)}</b> diamonds, every reign.`
+                : 'Nothing picked yet.';
+        };
+        // Always a new array in catalogue order: the default ([]) is never changed in place, and
+        // the beverages are poured in the order they stand here.
+        const choose = keep => {
+            settings.throneDrinkSet = BEV_ALL_KEYS.filter(keep);
+            saveSettings();
+            redraw();
+        };
+
+        for (const [text, keep] of [
+            ['All gold', k => k.endsWith('|gold')],
+            ['All diamonds', k => k.endsWith('|diamonds')],
+            ['Everything', () => true],
+            ['None', () => false],
+        ]) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = text;
+            b.addEventListener('click', () => choose(keep));
+            quick.appendChild(b);
+        }
+
+        const grid = document.createElement('div');
+        grid.className = 'mcfo-throne__grid';
+        grid.appendChild(document.createElement('span'));
+        for (const [, sizeLabel] of BEV_SIZES) {
+            const col = document.createElement('span');
+            col.className = 'mcfo-throne__col';
+            col.textContent = sizeLabel;
+            grid.appendChild(col);
+        }
+        for (const bev of BEVERAGES) {
+            const name = document.createElement('span');
+            name.className = 'mcfo-throne__name';
+            name.textContent = bev.label;
+            name.style.color = bev.stroke === '#ffffff' ? '#e8e2c8' : bev.stroke;
+            grid.appendChild(name);
+            for (const [size, sizeLabel] of BEV_SIZES) {
+                const cell = document.createElement('div');
+                cell.className = 'mcfo-throne__cell';
+                for (const [currency, currencyLabel] of BEV_CURRENCIES) {
+                    const key = `${bev.type}|${size}|${currency}`;
+                    const b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'mcfo-throne__pick';
+                    b.setAttribute('data-cur', currency);
+                    b._mcfoKey = key;
+                    b.innerHTML = `<i class="mcfo-throne__${currency === 'gold' ? 'coin' : 'gem'}" aria-hidden="true"></i><span></span>`;
+                    b.lastChild.textContent = number(bevPrice(key));
+                    b.title = `${bev.label} ${sizeLabel} for ${number(bevPrice(key))} ${currencyLabel}`;
+                    b.addEventListener('click', () => {
+                        const set = new Set(settings.throneDrinkSet);
+                        if (set.has(key)) set.delete(key); else set.add(key);
+                        choose(k => set.has(k));
+                    });
+                    picks.push(b);
+                    cell.appendChild(b);
+                }
+                grid.appendChild(cell);
+            }
+        }
+        card.append(grid, sum);
+        redraw();
+        return card;
     }
 
     // =========================================================================================
@@ -8052,6 +8391,16 @@
         };
     }
 
+    // Presses the game's Reduce or Increase button as often as the difference says; the game
+    // clamps and greys its button at either end, which ends the loop. Also used by section 7c.
+    function stepTollTo(want) {
+        const st = tollState();
+        if (st.value === null) return;
+        const diff = want - st.value;
+        const button = role(diff > 0 ? 'king-toll-increase' : 'king-toll-decrease');
+        for (let n = Math.abs(diff); n > 0 && button && !button.disabled; n--) button.click();
+    }
+
     function commitToll(box, target) {
         const st = tollState();
         const input = box.querySelector('.mcfo-toll__input');
@@ -8059,9 +8408,7 @@
         if (st.value === null || !Number.isFinite(want) || String(target).trim() === '') { syncTollField(box, true); return; }
         want = Math.max(0, Math.min(TOLL_MAX, want));
         input.value = String(want);
-        const diff = want - st.value;
-        const button = role(diff > 0 ? 'king-toll-increase' : 'king-toll-decrease');
-        for (let n = Math.abs(diff); n > 0 && button && !button.disabled; n--) button.click();
+        stepTollTo(want);
         input.removeAttribute('data-mcfo-dirty');
         syncTollField(box, true);
     }
@@ -9124,12 +9471,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.18';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.19';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.19', date: '2026-09-15', items: [
+            'New settings page, On the throne: the moment you take the crown, your toll can go to a value of your choice by itself, and the beverages you pick are poured as soon as the game unlocks them. Pick one, a few or all 24 (four beverages, three sizes, gold or diamonds); the page adds up what that costs.',
+            'Both are opt-in and happen once per reign, never again after a reload, always through the game\'s own buttons. A note on screen says what was done and what the game refused. Careful: beverages spend gold or diamonds for good.',
+        ] },
         { v: '6.18', date: '2026-09-15', items: [
             'Six new Deluxe themes in a new group, Music: Die Ärzte (HELL and DUNKEL, and a bloodshot eye that follows your pointer), Linkin Park (sprayed concrete, black and yellow, every button in brackets), Kraftklub (stripes, yellow tickets, matchstick eyes), Goethes Erben (a dark stage, cyan light, faceless figures, a line of verse), Samsas Traum (an etched plate with a beetle crawling across it, candles, deep water) and Prinz Pi (a spinning record, a compass that never finds north).',
         ] },
@@ -9298,6 +9649,7 @@
                 'King name and toll stand on the tile; the beverage buttons sit left and right of the attack button. A beverage panel stays open after a purchase, so several can be bought in a row.',
                 'On the throne you can type the toll instead of clicking it up and down.',
                 'Attack when free (opt-in in Settings) waits until your marble is free and attacks for you.',
+                'On the throne (opt-in in Settings) sets your toll and pours the beverages you picked by itself when you take the crown, once per reign. Beverages spend gold or diamonds for good.',
             ] },
             { title: 'Chat', items: [
                 'The chat folds into a slim rail with a counter for new messages, or pops out into a window of its own.',
@@ -9531,6 +9883,7 @@
         if (section.render === 'sound') return [];   // the game keeps these, not this script (section 11c)
         const keys = [];
         for (const item of sectionItems(section)) { keys.push(item.key); for (const sub of itemSubs(item)) keys.push(sub.key); }
+        if (section.throne) keys.push('throneDrinkSet');
         return keys;
     }
 
@@ -9555,10 +9908,12 @@
         } else if (section.render === 'sound') {
             box.appendChild(soundCard(() => renderSettings(body)));
         } else {
+            if (section.throne) box.appendChild(throneNotice());
             const card = document.createElement('div');
             card.className = 'mcfo-set__card';
             for (const item of section.items) card.appendChild(settingItem(item));
             box.appendChild(card);
+            if (section.throne) box.appendChild(throneDrinksCard());
 
             if (section.grid) {
                 const sub = document.createElement('div');
@@ -10227,7 +10582,8 @@
             saveSettings();
             apply();
             // Switches that need this one change from grey to live (or back): redraw the page.
-            if (settingsRedraw && ALL_ITEMS.some(i => i.needs === item.key)) settingsRedraw();
+            // So does a card of the page that hangs on it (redraw: true).
+            if (settingsRedraw && (item.redraw || ALL_ITEMS.some(i => i.needs === item.key))) settingsRedraw();
         });
         return wrap;
     }
@@ -10600,6 +10956,7 @@
         watchTray();
         buildKingTray();
         buildAttackAssist();
+        throneTick();
         placeKingTray();
         watchTrayHeight();
         placeChat();
