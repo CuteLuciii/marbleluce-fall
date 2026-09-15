@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.20
+// @version      6.20.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1148,6 +1148,9 @@
            Moved by translate only, from a length placeKingTray measures (section 7): the game's
            layout — and the king pane's height, which it derives from the tray — stays as it is. */
         html[data-mcfo-traylift="1"] [data-role="king-action-tray"] { translate: 0 calc(-1 * var(--mcfo-tray-lift, 0px)); }
+        /* While a marble runs in the king tile the game empties the tray (6.20.1, watchTrayHeight):
+           it keeps the height it had when filled, so the tile above it does not move. */
+        [data-role="king-action-tray"].lane-action-tray--empty { box-sizing: border-box; min-height: var(--mcfo-tray-keep, 0px); }
 
         /* === CHAT HEIGHT FOLLOWS THE BOARD (6.13) ===
            The chat column filled the whole height, while the tiles, fitted by their aspect, often
@@ -6946,15 +6949,28 @@
     // too wide, and its tile, centred above the tray, sticks out above the lanes until the next
     // refit (ninkasi, 15.09.: after every reload; a resize put it right). So a change of the
     // tray's height is a reason to refit, like a change of window size.
-    let trayHeightSeen = null;
+    //
+    // An EMPTY tray is no reason (6.20.1). While a marble runs in the king tile the game empties
+    // the tray (kingPane.js renderTray: innerHTML '', class lane-action-tray--empty), and a refit
+    // then gave the king column the room of a pane without a tray: the tile jumped to the size of
+    // the lanes and the bar was gone (Luce, 16.09.). Now the empty tray keeps the height it last
+    // had when filled (--mcfo-tray-keep, CSS above), so nothing moves at all, and only a change
+    // between two filled heights refits — the empty tray at load still counts as 0, so the fix of
+    // 15.09. stays.
+    let trayHeightSeen = null;   // the last FILLED height (0 while none was seen yet)
     let trayHeightWatch = null;
     function watchTrayHeight() {
         const tray = role('king-action-tray');
         if (!tray || trayHeightWatch || typeof ResizeObserver !== 'function') return;
         trayHeightWatch = new ResizeObserver(() => {
             const h = Math.round(tray.getBoundingClientRect().height);
+            if (h === 0 || tray.classList.contains('lane-action-tray--empty')) {
+                if (trayHeightSeen === null) trayHeightSeen = 0;
+                return;
+            }
             if (trayHeightSeen !== null && h !== trayHeightSeen) refitSoon();
             trayHeightSeen = h;
+            tray.style.setProperty('--mcfo-tray-keep', h + 'px');
         });
         trayHeightWatch.observe(tray);
     }
@@ -9521,12 +9537,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.20.1', date: '2026-09-16', items: [
+            'Fixed: while a marble ran in the king tile, the attack bar disappeared and the king tile shrank to the size of the lanes. The bar now keeps its room while the game empties it, and the tile stays where it is.',
+        ] },
         { v: '6.20', date: '2026-09-15', items: [
             'Attack when free can now try again until you are King (Settings, King tile, After a miss). After a lava bubble or a wall that holds, it starts over by itself: sits out the lava cooldown, unbids once, waits until your marble is free and attacks again. The button counts the tries; click it to stop. Every miss costs points.',
             'While Attack when free sits out a lava cooldown, your autobid keeps playing instead of pausing for three minutes.',
