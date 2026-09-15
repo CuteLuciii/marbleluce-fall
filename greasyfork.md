@@ -8,6 +8,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
   - **Games:** Minecraft, TARDIS, Satisfactory, Super Mario, Zelda, Tetris, Pac-Man, Portal, Sonic, Pokédex, Game Boy, Stardew Valley, Hollow Knight, World of Warcraft, Casino
   - **Film & TV:** Supernatural, Breaking Bad, Back to the Future (with live time circuits), Everything Everywhere All at Once (googly eyes that follow your pointer), Star Wars (opening crawl, lightsaber buttons), Vertigo, Cinema
   - **Books:** The Lost Bookshop (Der verschwundene Buchladen), Reading Nook
+  - **Music:** Die Ärzte, Linkin Park, Kraftklub, Goethes Erben, Samsas Traum, Prinz Pi
 - **Pages as windows** — shop, inventory, profile and more open as movable windows over the game, with a taskbar.
 - **Bidding** — unbid in one click, extra ticket chips, autobid with risk protection.
 - **King tile** — the king's name and toll right on the tile; attack when free (opt-in).
