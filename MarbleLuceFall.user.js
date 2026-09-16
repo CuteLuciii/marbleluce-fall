@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.20.2
+// @version      6.20.3
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -791,6 +791,25 @@
             /* Vertical padding as in the original (7px): at 0 the tray shrank from 57 to 43px,
                and the king pane derives its height from that. */
             padding: 7px clamp(4px, 1.6cqi, 10px);
+            /* The height of the beverage buttons, measured from the attack button (6.20.3,
+               syncDrinkHeight). The value here only carries the first frames, before the
+               measurement is in. */
+            --mcfo-drink-h: 30px;
+            /* A floor, and the whole point of it is timing (6.20.3). The game rebuilds the tray
+               with innerHTML and measures the columns in the SAME task
+               (renderTray -> syncKingTileFit -> scheduleActionAwareMainGrid), while our copy of
+               the attack button is only put back by a MutationObserver, a beat later. In between,
+               the game's own attack button is already hidden by our sheet and this content box is
+               empty: 14px, the padding and nothing else. The game then hands the king column the
+               width of a pane that has almost no tray — the tile grows, stands higher and pushes
+               the bar down, and since the game only measures again when the chat is folded, it
+               stays that way (Luce, 16.09.; measured on her page: 564px wide when it counts on a
+               57px tray, 579px when it counts on 14px).
+               56px is what this box measures when it holds the attack button: the button's 42px
+               and 7px of padding above and below, which count in because the page puts every box
+               on border-box. The tray around it is then the 57px the game knows. A floor only —
+               if the game ever makes its button taller, the box and the tray follow. */
+            min-height: 56px;
         }
         html[data-mcfo-tray="1"] .mcf-king-action-content .mcf-king-attack-placeholder {
             /* 200px. Measured widths of the labels the button uses (kingPane.js):
@@ -834,14 +853,20 @@
         html[data-mcfo-tray="1"] .mcfo-stack { display: flex; gap: clamp(3px, 1cqi, 6px); grid-row: 1; justify-self: stretch; width: 100%; }
         html[data-mcfo-tray="1"] .mcfo-stack--left  { grid-column: 1; }
         html[data-mcfo-tray="1"] .mcfo-stack--right { grid-column: 3; justify-content: flex-end; }
-        /* Scaled through one variable, set from the "Button size" slider. Its ceiling of 140%
-           is not arbitrary: at that size a button is about 39px tall, just under the 43px the
-           tray has inside its padding — any taller and the tray grows, and the king pane
-           derives its height from the tray. */
+        /* Scaled through one variable, set from the "Button size" slider — width and text, not
+           height. Since 6.20.3 a beverage button is exactly as tall as the attack button beside
+           it (Luce: the different heights had bothered her since the buttons took the look of the
+           themes). That also settles an old worry written here: a button taller than the attack
+           button made the whole tray taller, and the king pane derives its height from the tray,
+           so the size slider used to have a ceiling for that reason alone.
+           The height comes from syncDrinkHeight as --mcfo-drink-h; the text is centred in it
+           instead of being pushed there by padding. */
         .mcfo-drink {
             flex: 1 1 0;
             min-width: 0; max-width: calc(130px * var(--mcfo-drink-scale, 1));
-            padding: calc(6px * var(--mcfo-drink-scale, 1)) calc(clamp(3px, 1.2cqi, 8px) * var(--mcfo-drink-scale, 1));
+            height: var(--mcfo-drink-h, 30px);
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 0 calc(clamp(3px, 1.2cqi, 8px) * var(--mcfo-drink-scale, 1));
             border: 2px solid; border-radius: 6px;
             font-family: inherit; font-weight: 800; font-size: calc(clamp(9px, 2.1cqi, 13px) * var(--mcfo-drink-scale, 1)); line-height: 1; cursor: pointer;
             /* Clipped rather than wrapped when the window gets tight: a second line would make the
@@ -854,11 +879,9 @@
         /* Symbols instead of names (6.12): the symbol carries the meaning, so the button itself can
            take the page's look — the stock button colours here, which a theme recolours like the rest
            of this sheet, and a Deluxe skin's own buttons (SKIN_BUTTONS). The name stays as a tooltip
-           and for screen readers. Less padding above and below than a label: at 140% a symbol is
-           25px, and the button has to stay under the 43px the tray has inside. */
+           and for screen readers. The height is the attack button's since 6.20.3, so the symbol is
+           simply centred in it; it is capped below so it always fits. */
         .mcfo-drink--icon {
-            display: inline-flex; align-items: center; justify-content: center;
-            padding-block: calc(4px * var(--mcfo-drink-scale, 1));
             background: #111f2b; border-color: #355066; color: #cde6ff;
         }
         .mcfo-drink--icon:hover { border-color: #4d7ea6; }
@@ -866,8 +889,8 @@
             display: block; flex: none;
             /* Grows with the tray up to 22px, times the size slider — and never past 27px, so the
                button stays inside the tray at 140% too. */
-            width: min(calc(clamp(15px, 4.4cqi, 22px) * var(--mcfo-drink-scale, 1)), 27px);
-            height: min(calc(clamp(15px, 4.4cqi, 22px) * var(--mcfo-drink-scale, 1)), 27px);
+            width: min(calc(clamp(15px, 4.4cqi, 22px) * var(--mcfo-drink-scale, 1)), 27px, calc(var(--mcfo-drink-h, 30px) - 8px));
+            height: min(calc(clamp(15px, 4.4cqi, 22px) * var(--mcfo-drink-scale, 1)), 27px, calc(var(--mcfo-drink-h, 30px) - 8px));
             filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
         }
 
@@ -6872,11 +6895,29 @@
         }
     }
 
+    // The beverage buttons take the height of the attack button (6.20.3). Measured on the button
+    // that is really shown — ours while "attack when free" is on, the game's otherwise, both carry
+    // the game's class — and handed to the CSS as a variable. Besides the look, this keeps the
+    // tray from growing: a beverage button taller than the attack button made the whole tray
+    // taller than the one the game measured its column with, and the king tile ended up out of
+    // line (see alignPanes).
+    function syncDrinkHeight() {
+        const content = document.querySelector('.mcf-king-action-content');
+        if (!content) return;
+        const attack = [...content.querySelectorAll('.mcf-king-attack-placeholder')]
+            .find(b => b.getBoundingClientRect().height > 0);
+        if (!attack) return;
+        const h = Math.round(attack.getBoundingClientRect().height);
+        if (h > 0 && content.style.getPropertyValue('--mcfo-drink-h') !== h + 'px') {
+            content.style.setProperty('--mcfo-drink-h', h + 'px');
+        }
+    }
+
     function watchTray() {
         const tray = role('king-action-tray');
         if (!tray || tray.getAttribute('data-mcfo-watched') === '1') return;
         tray.setAttribute('data-mcfo-watched', '1');
-        new MutationObserver(() => { buildKingTray(); buildAttackAssist(); placeKingTray(); }).observe(tray, { childList: true, subtree: true });
+        new MutationObserver(() => { buildKingTray(); buildAttackAssist(); syncDrinkHeight(); placeKingTray(); }).observe(tray, { childList: true, subtree: true });
     }
 
     // The king tile is fitted into its pane by scale and centred (kingPane.js syncKingTileFit:
@@ -9572,12 +9613,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.3';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.20.3', date: '2026-09-16', items: [
+            'The beverage buttons beside the attack button are now exactly as tall as it is, whatever the theme makes of them. The size slider still changes how wide they are and how big their symbol is.',
+            'That also keeps the bar at the height the game measured it at, which is one way the king tile could end up standing out of line with the other two tiles.',
+            'Fixed for good: the king tile could come back from a reload bigger than it should be, standing higher than the other two tiles with the bar pushed down. The game rebuilds the bar and measures the columns in the same breath, and for that one moment the bar was empty. It now always keeps the height of the attack button.',
+        ] },
         { v: '6.20.2', date: '2026-09-16', items: [
             'Fixed: the king tile could stand a whole bar taller than the other two tiles, with the attack bar hanging below their bottom edge. The game had measured the column in a moment when the bar was empty, and only measures again when the chat is opened or closed. The script now notices the columns being out of line and has it measure again.',
         ] },
@@ -11067,6 +11113,7 @@
         watchTray();
         buildKingTray();
         buildAttackAssist();
+        syncDrinkHeight();
         throneTick();
         placeKingTray();
         watchTrayHeight();
