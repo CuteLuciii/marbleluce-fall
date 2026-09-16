@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.20.1
+// @version      6.20.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -6975,6 +6975,41 @@
         trayHeightWatch.observe(tray);
     }
 
+    // The king column is viewport + tray (app.js computeActionAwareLaneGridColumns:
+    // viewportHeight = availableHeight - measureActionTrayHeight). Measured in a moment when the
+    // tray is empty — while a marble runs in the king tile — the viewport gets the full height:
+    // the king tile ends up one tray taller than the lanes and its tray hangs below their bottom
+    // edge (Luce, 16.09.). The game measures again only when the chat opens or closes, so a page
+    // loaded in such a moment keeps it for the rest of the session. 6.20.1 keeps the empty tray
+    // at its last filled height, which stops it from happening again; this puts right what is
+    // already wrong, whenever it is found.
+    //
+    // A refit is two clicks on the game's chat toggle, so it is kept rare: at most one per
+    // ALIGN_COOLDOWN_MS, and given up after ALIGN_MAX_TRIES. A mismatch the game itself cannot
+    // resolve must not fold the chat every few seconds for ever.
+    const ALIGN_TOLERANCE_PX = 3;
+    const ALIGN_COOLDOWN_MS = 15000;
+    const ALIGN_MAX_TRIES = 3;
+    let alignAt = 0, alignTries = 0;
+    function alignPanes() {
+        if (!settings.boardRefit) return;
+        const king = role('king-pane');
+        const lane = document.querySelector('[data-role="main-region"] [data-role="lane-panel"]');
+        if (!king || !lane) return;
+        const mode = (role('shell') || { getAttribute: () => null }).getAttribute('data-layout-mode');
+        if (mode && mode !== 'desktop') return;
+        const k = king.getBoundingClientRect(), l = lane.getBoundingClientRect();
+        if (!k.height || !l.height) return;
+        const off = Math.round(k.bottom - l.bottom);
+        if (Math.abs(off) <= ALIGN_TOLERANCE_PX) { alignTries = 0; return; }   // in line again
+        const now = Date.now();
+        if (alignTries >= ALIGN_MAX_TRIES || now - alignAt < ALIGN_COOLDOWN_MS) return;
+        alignAt = now;
+        alignTries++;
+        console.log(`[MarbleLuceFall] king column ${Math.abs(off)}px ${off > 0 ? 'below' : 'above'} the lanes - having the game measure again`);
+        refitSoon();
+    }
+
     // =========================================================================================
     // 7b. ATTACK WHEN FREE (opt-in)
     // =========================================================================================
@@ -9537,12 +9572,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.20.2', date: '2026-09-16', items: [
+            'Fixed: the king tile could stand a whole bar taller than the other two tiles, with the attack bar hanging below their bottom edge. The game had measured the column in a moment when the bar was empty, and only measures again when the chat is opened or closed. The script now notices the columns being out of line and has it measure again.',
+        ] },
         { v: '6.20.1', date: '2026-09-16', items: [
             'Fixed: while a marble ran in the king tile, the attack bar disappeared and the king tile shrank to the size of the lanes. The bar now keeps its room while the game empties it, and the tile stays where it is.',
         ] },
@@ -11032,6 +11070,7 @@
         throneTick();
         placeKingTray();
         watchTrayHeight();
+        alignPanes();
         placeChat();
         drawKingFields();
         // Last: the chips above change the width of the rail, and only then is it worth aligning.
