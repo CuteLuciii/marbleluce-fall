@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.20.4
+// @version      6.20.5
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -5143,15 +5143,15 @@
                 ${S} .mcfo-lb-ivy i { position: absolute; top: 0; bottom: 0; width: 30px; background: url("${A.ivyChat}") 50% 0 / 30px 200px repeat-y; }
                 ${S} .mcfo-lb-ivy i:first-child { left: -9px; }
                 ${S} .mcfo-lb-ivy i:last-child { right: -9px; transform: scaleX(-1); background-position: 50% 90px; }
-                ${S} .mcfo-lb-plaque { position: absolute; left: 50%; top: 100%; z-index: 40; transform: translate(-50%, -50%); pointer-events: none; white-space: nowrap;
-                    padding: 3px 18px 5px; border-radius: 3px; background: rgba(7, 15, 26, 0.88); border: 1px solid #b8963f; box-shadow: 0 0 0 3px rgba(7, 15, 26, 0.6), 0 4px 12px rgba(0, 0, 0, 0.5);
+                ${S} .mcfo-lb-plaque { position: absolute; left: 50%; top: 100%; z-index: 40; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
+                    padding: 4px 18px 6px; border-radius: 0 0 6px 6px; background: rgba(7, 15, 26, 0.92); border: 1px solid #b8963f; border-top: 0; box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
                     font: 400 19px/1 ${BOOK_SCRIPT}; color: #e8c46a; text-shadow: 0 0 8px rgba(232, 196, 106, 0.35); }`,
             decor: [
                 { cls: 'mcfo-lb-nook', host: () => document.querySelector('.mcf-chat'), html: '<i></i><b></b>' },
                 { cls: 'mcfo-lb-ivy', host: () => document.querySelector('.mcf-chat'), html: '<i></i><i></i>' },
-                // Hangs like a shop sign on the seam between the header and the king tile: the header centre is
-                // usually covered by cards, and there is no free space above the tile, so the seam is the one
-                // place that is always visible. Re-measured every tick because the tile moves with chat/tray.
+                // Docked to the top edge of the king tile like a tab hanging from it: the header centre is usually
+                // covered by cards and there is no free space above the tile. Re-measured every tick because the
+                // tile moves with chat/tray.
                 { cls: 'mcfo-lb-plaque', host: () => role('top-status-region'), html: 'In a place called Lost, strange things are found.',
                   place: (el, host) => {
                       const tile = role('king-tile-frame') || role('king-pane');
@@ -5159,7 +5159,7 @@
                       const t = tile.getBoundingClientRect(), h = host.getBoundingClientRect();
                       if (!t.width || !h.width) return;
                       el.style.left = Math.round(t.left + t.width / 2 - h.left) + 'px';
-                      el.style.top = Math.round((h.bottom + t.top) / 2 - h.top) + 'px';
+                      el.style.top = Math.round(t.top - h.top) + 'px';
                   } },
             ],
             particles: [
@@ -9624,12 +9624,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.4';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.5';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.20.5', date: '2026-09-16', items: [
+            'The Lost Bookshop: the sign now docks straight onto the top edge of the king tile, hanging from it like a little tab.',
+        ] },
         { v: '6.20.4', date: '2026-09-16', items: [
             'The Lost Bookshop: the sign now reads "In a place called Lost, strange things are found." and hangs right above the king tile, where the header cards can no longer hide it. It follows the tile when the chat is folded away.',
         ] },
