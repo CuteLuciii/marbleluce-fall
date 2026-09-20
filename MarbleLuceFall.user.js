@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.20.6
+// @version      6.21
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -694,6 +694,10 @@
         // The game has no footer button for this one at all — /achievements answers 200 but is
         // only reachable from inside other pages. In the account menu it finally has a home.
         'achievements':     { path: '/achievements',  title: 'Achievements'     },
+        // Added by the game in build v0.10.0b. It is reachable only from the panel behind the
+        // game's own header button, and the gear takes that button's place (section 11), so
+        // without an entry of its own the page would have no way in at all.
+        'credits':          { path: '/credits',       title: 'Credits'          },
         'how-to-play-nav':  { path: '/how-to-play/',  title: 'How to Play'      },
         'terms-nav':        { path: '/legal/terms/',  title: 'Terms of Service' },
     };
@@ -702,8 +706,9 @@
     // are deliberately absent: they are copied to the king tray, not hidden, and their originals
     // stay where they are. How to Play and Terms are never hidden.
 
-    // In the account menu, in the order they had in the footer.
-    const ACCOUNT_MENU = ['profile-nav', 'dailies-nav', 'inventory-nav', 'achievements', 'leaderboards-nav'];
+    // In the account menu, in the order they had in the footer. Credits never had a footer
+    // button and comes last, below the pages that are about your own account.
+    const ACCOUNT_MENU = ['profile-nav', 'dailies-nav', 'inventory-nav', 'achievements', 'leaderboards-nav', 'credits'];
 
     // Chips up to and including this stay visible when the rail is collapsed.
     const RAIL_ALWAYS = 10;
@@ -9624,12 +9629,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.20.6';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.21';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.21', date: '2026-09-20', items: [
+            'Credits is now in the account menu. The game added that page in its latest update and hung it behind the header button the gear takes the place of, so until now it had no way in.',
+            'The game\'s own graphics levels are now on the Performance page, below your own levers: Auto, High, Balanced, Low, Minimal. They decide how sharply the board is drawn and whether marble trails and the king wall shadow are drawn at all. The game keeps the choice itself, so this is the same one its own menu sets, and the Performance tile says which level you are on.',
+        ] },
         { v: '6.20.6', date: '2026-09-16', items: [
             'The Lost Bookshop: the sign now sits on top of the king tile like a little crest, so it no longer covers the king\'s name or crown.',
         ] },
@@ -10042,7 +10051,9 @@
         }
         if (section.render === 'performance') {
             const level = PERF_LEVELS.find(l => l.id === settings.perfLevel) || PERF_LEVELS[0];
-            return { text: 'Level: ' + level.label, none: level.id === 'off' };
+            const g = graphicsState();
+            return { text: 'Level: ' + level.label + (g ? ' \u00b7 Graphics: ' + g.label(g.mode) : ''),
+                     none: level.id === 'off' && (!g || g.mode === 'auto') };
         }
         if (section.render === 'sound') {
             const s = soundState();
@@ -10080,6 +10091,10 @@
 
         if (section.render === 'performance') {
             box.appendChild(performanceCard(() => renderSettings(body)));
+            const gt = document.createElement('div');
+            gt.className = 'mcfo-set__sub-title';
+            gt.textContent = 'The game\'s own graphics';
+            box.append(gt, graphicsCard(() => renderSettings(body)));
         } else if (section.render === 'theme') {
             box.appendChild(themeCard(() => renderSettings(body)));
         } else if (section.render === 'sound') {
@@ -10830,6 +10845,77 @@
             row.appendChild(seg);
         }
         return row;
+    }
+
+    // =========================================================================================
+    // 11d. GRAPHICS: THE GAME'S OWN QUALITY LEVELS, FROM THE SETTINGS (6.21)
+    // =========================================================================================
+    // Game build v0.10.0b added a quality picker of its own (graphicsQuality.js): auto, high,
+    // balanced, low, minimal. It decides how sharply the board is drawn and whether marble trails
+    // and the king wall shadow are drawn at all, and it changes nothing about the game itself.
+    // It sits in the same panel as the sound controls, behind the header button the gear replaces
+    // — with the gear on, that panel is hidden and the picker cannot be reached.
+    //
+    // Like the sound page (11c) this keeps no second copy. The game listens for a change event on
+    // anything matching [data-role="graphics-mode"] anywhere on the page, and it redraws every
+    // copy of the control from its own state afterwards. Setting the value on its own select and
+    // letting the event bubble is therefore exactly the path its own picker takes, storage in
+    // localStorage included. Hidden by display:none changes none of that: events do not care
+    // whether an element is drawn.
+    //
+    // The level names and the sentence under them are read off the game's own control, so a build
+    // that renames a level or explains it differently says so here without a change.
+    const graphicsSelect = () => soundEl('graphics-mode');
+
+    function graphicsState() {
+        const sel = graphicsSelect();
+        if (!sel || !sel.options || !sel.options.length) return null;
+        const opts = [...sel.options];
+        return {
+            mode: sel.value,
+            modes: opts.map(o => o.value),
+            label: m => { const o = opts.find(x => x.value === m); return o ? o.textContent.trim() : m; },
+            text: ((soundEl('graphics-mode-description') || {}).textContent || '').trim(),
+        };
+    }
+
+    function chooseGraphicsMode(mode) {
+        const sel = graphicsSelect();
+        if (!sel || sel.value === mode) return;
+        sel.value = mode;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function graphicsCard(redraw) {
+        const card = document.createElement('div');
+        card.className = 'mcfo-set__card';
+        const g = graphicsState();
+        if (!g) {
+            const note = document.createElement('div');
+            note.className = 'mcfo-set__notice';
+            note.textContent = 'The game has not drawn its graphics control yet. Open this page again in a moment.';
+            card.appendChild(note);
+            return card;
+        }
+        const top = document.createElement('div');
+        top.className = 'mcfo-perf__top';
+        const seg = document.createElement('div');
+        seg.className = 'mcfo-seg mcfo-perf__levels';
+        for (const mode of g.modes) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = g.label(mode);
+            b.setAttribute('aria-pressed', g.mode === mode ? 'true' : 'false');
+            // The game writes the new description into its own control first; read it back after.
+            b.addEventListener('click', () => { chooseGraphicsMode(mode); redraw(); });
+            seg.appendChild(b);
+        }
+        const text = document.createElement('div');
+        text.className = 'mcfo-perf__text';
+        text.textContent = g.text;
+        top.append(seg, text);
+        card.appendChild(top);
+        return card;
     }
 
     // =========================================================================================
