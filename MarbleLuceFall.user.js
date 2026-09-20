@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.21
+// @version      6.21.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -115,21 +115,46 @@
         try { takeFrame(JSON.parse(data)); } catch (e) { /* a broken frame is skipped */ }
     }
 
+    // One socket, tapped at most once, whoever hands it over. The gameplay socket only, never
+    // the chat (/chat/ws). Reading a socket that is already open costs nothing: lane_state frames
+    // arrive again and again, so there is nothing to catch up on.
+    const tappedSockets = new WeakSet();
+    function tapSocket(ws) {
+        try {
+            if (!ws || tappedSockets.has(ws)) return;
+            if (new URL(String(ws.url || ''), location.href).pathname !== '/ws') return;
+            tappedSockets.add(ws);        // set first: our own addEventListener comes back through here
+            ws.addEventListener('message', e => readFrame(e.data));
+        } catch (e) { /* never let the tap break the socket */ }
+    }
+
     try {
         const NativeWebSocket = pageWindow.WebSocket;
         // A subclass keeps instanceof, the readyState constants and every method intact.
         class TappedWebSocket extends NativeWebSocket {
             constructor(...args) {
                 super(...args);
-                try {
-                    // The gameplay socket only, not the chat (/chat/ws).
-                    if (new URL(String(args[0]), location.href).pathname === '/ws') {
-                        this.addEventListener('message', e => readFrame(e.data));
-                    }
-                } catch (e) { /* never let the tap break the socket */ }
+                tapSocket(this);
             }
         }
         pageWindow.WebSocket = TappedWebSocket;
+
+        // The constructor is the clean way, but it only catches a socket this script was in time
+        // for. When the userscript manager injects late — seen in the wild after a cold browser
+        // start — the game's socket already exists, not one frame is ever read, and autobid sits
+        // there switched on bidding nothing until the page is reloaded (20.09.2026).
+        //
+        // So the instance is taken from the two methods the game uses on it afterwards as well.
+        // It adds its own message listener after the constructor has returned, it sends a
+        // subscribe from its own open handler on every connect, and it sends a resync whenever a
+        // lane needs a fresh basis (prodViewer/ingest.js) — whichever of those comes first hands
+        // the socket over. Both wrappers pass everything through untouched.
+        const proto = NativeWebSocket.prototype;
+        const nativeAdd = proto.addEventListener;
+        proto.addEventListener = function (...args) { tapSocket(this); return nativeAdd.apply(this, args); };
+        const nativeSend = proto.send;
+        proto.send = function (...args) { tapSocket(this); return nativeSend.apply(this, args); };
+
         tapInstalled = true;
     } catch (e) {
         // Without the tap everything else still works; autobid then says it cannot see the lanes.
@@ -9629,12 +9654,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.21';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.21.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.21.1', date: '2026-09-20', items: [
+            'Fixed: after closing the browser and opening it again, autobid could come back switched on and bid nothing, until the page was reloaded or the switch was turned off and on again. Two different things could keep it from starting, and both are gone.',
+            'Autobid is now the first thing the script sets up, and every part of the start-up stands on its own. One part running into trouble used to take autobid down with it for the whole life of the page, without a word.',
+            'The script reads which tile is up on which lane from the game\'s own connection. After a cold browser start it could come up a moment too late for that connection and never see a single lane, and autobid has nothing to bid on without them. It now picks the connection up afterwards as well.',
+        ] },
         { v: '6.21', date: '2026-09-20', items: [
             'Credits is now in the account menu. The game added that page in its latest update and hung it behind the header button the gear takes the place of, so until now it had no way in.',
             'The game\'s own graphics levels are now on the Performance page, below your own levers: Auto, High, Balanced, Low, Minimal. They decide how sharply the board is drawn and whether marble trails and the king wall shadow are drawn at all. The game keeps the choice itself, so this is the same one its own menu sets, and the Performance tile says which level you are on.',
@@ -11239,17 +11269,28 @@
     setInterval(apply, 1500);
     addEventListener('resize', centreRail);
 
+    // Start-up, step by step, each one on its own. Until 6.21.1 this was a single run of calls
+    // with startAutobid() at the end of it, and that is one throw away from an autobid that never
+    // starts: no beat, no lane listener, nothing, for the whole life of the page. The page of the
+    // game is not always in the shape a step expects the first time, and apply() and
+    // restoreParked() run synchronously right in front of it. apply() has a beat of its own and
+    // heals itself, autobid had nothing — which is why it had to be reloaded or switched off and
+    // on again, the switch ticking it by hand (reported 20.09.2026).
+    //
+    // Autobid goes first now. It is the part that acts on its own and must not wait on anything
+    // above it having gone well; it touches no element that has to exist.
+    const step = (what, fn) => {
+        try { fn(); } catch (e) { console.warn('[MarbleLuceFall] start-up step "' + what + '" failed:', e && e.message); }
+    };
+    step('autobid', startAutobid);
     // Random theme: picked before the first pass, so the page never shows the old one first.
-    if (settings.themeRandom) randomTheme();
-    apply();
-    restoreParked();
-    pollKing();
-    setInterval(pollKing, KING_POLL_MS);
+    step('random theme', () => { if (settings.themeRandom) randomTheme(); });
+    step('first pass', apply);
+    step('parked windows', restoreParked);
+    step('king', () => { pollKing(); setInterval(pollKing, KING_POLL_MS); });
     // Read-only and cheap; also picks up a fresh set of rights after a throne change.
-    pollBeverages();
-    setInterval(pollBeverages, 20000);
-    loadBuildId();
-    startAutobid();
+    step('beverages', () => { pollBeverages(); setInterval(pollBeverages, 20000); });
+    step('build id', loadBuildId);
     // A moment after start-up, once the game has built its page.
     setTimeout(maybeShowWhatsNew, 1200);
     }   // end of main()
