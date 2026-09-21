@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.21.1
+// @version      6.21.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -726,6 +726,12 @@
         'how-to-play-nav':  { path: '/how-to-play/',  title: 'How to Play'      },
         'terms-nav':        { path: '/legal/terms/',  title: 'Terms of Service' },
     };
+
+    // Same pages, looked up by their path. The game also links to some of them with a plain
+    // <a href>: the achievement toast ends in <a href="/achievements">View Achievements</a>
+    // (achievementToasts.js), and that link carries no data-role, so the listener below used to
+    // miss it and the page took over the whole tab.
+    const PAGE_BY_PATH = new Map(Object.values(PAGES).map(p => [p.path.replace(/\/+$/, ''), p]));
 
     // Which footer buttons can be hidden is FOOTER_BUTTONS in section 1. Rebellion and Beverages
     // are deliberately absent: they are copied to the king tray, not hidden, and their originals
@@ -6258,13 +6264,36 @@
     document.addEventListener('click', e => {
         if (!settings.pageOverlay) return;
         const button = e.target && e.target.closest && e.target.closest('[data-role]');
-        if (!button) return;
-        const page = PAGES[button.getAttribute('data-role')];
+        const page = button ? PAGES[button.getAttribute('data-role')] : linkTarget(e);
         if (!page) return;
         e.preventDefault();
         e.stopPropagation();
         openPage(page.path, page.title);
+        // A toast that linked here has done its job; the game's own navigation would have taken
+        // it off screen, so leaving it hovering over the window we just opened would be worse.
+        //
+        // Its own button is the only correct way out: achievementToasts.js waits on a promise
+        // that the button resolves, and only then removes the toast, disconnects two observers
+        // and pumps the next one out of the queue. Ripping the element out instead would leave
+        // that queue stalled for the full five seconds. No button, no action — the game clears
+        // the toast on its own timer anyway.
+        const toast = e.target.closest && e.target.closest('.mcfAchievementToast');
+        const dismiss = toast && toast.querySelector('.mcfAchievementToastDismiss');
+        if (dismiss) dismiss.click();
     }, true);
+
+    // A plain link to one of our pages — same rules a browser uses for "this stays in the tab":
+    // left button, no modifier, no target, same origin. Anything else (middle click, ctrl-click,
+    // a real new tab) is left alone, because that is the user asking for a second tab on purpose.
+    function linkTarget(e) {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
+        const a = e.target && e.target.closest && e.target.closest('a[href]');
+        if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return null;
+        let url;
+        try { url = new URL(a.getAttribute('href'), location.href); } catch (err) { return null; }
+        if (url.origin !== location.origin) return null;
+        return PAGE_BY_PATH.get(url.pathname.replace(/\/+$/, '')) || null;
+    }
 
     // Esc closes the topmost open window — the one you were last in.
     document.addEventListener('keydown', e => {
@@ -9654,12 +9683,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.21.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.21.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.21.2', date: '2026-09-21', items: [
+            'The "View Achievements" link in the game\'s achievement pop-up now opens the Achievements window instead of loading the page over the whole tab. Any other link the game uses to one of the overlay pages is caught the same way.',
+            'Clicking that link also closes the pop-up it came from, the same way its own button does, so the next one in line can show up.',
+            'Middle-clicks, ctrl-clicks and links leading anywhere else are left alone — asking for a new tab still gives you one.',
+        ] },
         { v: '6.21.1', date: '2026-09-20', items: [
             'Fixed: after closing the browser and opening it again, autobid could come back switched on and bid nothing, until the page was reloaded or the switch was turned off and on again. Two different things could keep it from starting, and both are gone.',
             'Autobid is now the first thing the script sets up, and every part of the start-up stands on its own. One part running into trouble used to take autobid down with it for the whole life of the page, without a word.',
