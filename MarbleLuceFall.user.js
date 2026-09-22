@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.22.0
+// @version      6.22.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player over the game’s soundtrack, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1644,6 +1644,10 @@
             font-variant-numeric: tabular-nums; text-align: center; }
         .mcfo-mus__seek { flex: 1; min-width: 0; accent-color: #2f9e62; cursor: pointer; }
         .mcfo-mus__seek[disabled] { opacity: 0.35; cursor: default; }
+        /* How much of the track is loaded: the reason a WAV of 40 MB stutters is worth showing. */
+        .mcfo-mus__buf { height: 3px; border-radius: 2px; background: #16283a; margin: -4px 40px 0; overflow: hidden; }
+        .mcfo-mus__buf > span { display: block; height: 100%; background: #33607f; transition: width 300ms linear; }
+        .mcfo-mus__buf[data-thin] > span { background: #c08a2e; }
         .mcfo-mus__search {
             flex: 1; min-width: 0; border: 1px solid #2c4254; border-radius: 6px;
             background: #0c1620; color: #e6f0f7; font: inherit; font-size: 12px; padding: 5px 8px;
@@ -9753,12 +9757,18 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.22.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.22.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.22.1', date: '2026-09-22', items: [
+            'Fixed: a track could fall silent after a second or two, or stutter its way through the second half. The soundtrack is kept as raw WAV files of 12 to 69 MB, which need 192 kilobytes every single second to play - and the game\'s server sends these files at anything between 115 kilobytes and 1.2 megabytes a second. Whenever it sends less than a track eats, the music runs out of road.',
+            'The player now waits until enough of the track has arrived before it plays on, and says so while it waits: one honest pause instead of a hiccup every two seconds. It stops waiting as soon as nothing more is arriving, so it never hangs about for nothing.',
+            'A thin bar under the position shows how much of the track is loaded - the stutter has a reason, and now you can see it.',
+            'Jumping with the bar stays quick: after a jump it only waits for a short run-up, not the full cushion.',
+        ] },
         { v: '6.22', date: '2026-09-22', items: [
             'New: a music player on the Sound page. The game plays its soundtrack straight through one fixed list, and Next is the only way along it. This one lays the whole soundtrack out by album and lets you pick the track you want.',
             'Shuffle plays everything once before anything comes round a second time, and every track has a tick: take it off and it stays out of the rotation. Album headers tick their whole album on or off, and the search box finds a track by title or album.',
@@ -11026,6 +11036,16 @@
     const MUSIC_LAST_KEY = 'mcfo_music_last';   // track and position, to pick up where it stopped
     const MUSIC_SAVE_EVERY_MS = 10000;
     const MUSIC_MAX_FAILS = 3;                  // a run of unplayable tracks stops the hunt
+    // Holding back. The soundtrack is raw WAV at 192 KB a second, and the game's server sends
+    // these files at anything between 115 KB and 1.2 MB a second - often less than a track eats.
+    // A browser starts as soon as it has a morsel and then runs dry every few seconds, which is
+    // heard as a track stopping after a second or two, or stuttering once the read-ahead reserve
+    // is used up (Firefox reads 60 s ahead, so that lands around the middle of a track). Instead
+    // of playing into an empty buffer, the player waits until a cushion is there and says so.
+    const MUSIC_AHEAD_START = 5;                // seconds ready before the first note
+    const MUSIC_AHEAD_RESUME = 15;              // seconds ready before it carries on after a dry spell
+    const MUSIC_HOLD_MAX_MS = 25000;            // waiting longer than this helps nobody: play on
+    const MUSIC_HOLD_STILL_MS = 5000;           // nothing arriving for this long: waiting is pointless
 
     const music = {
         tracks: null,     // [{ id, album, title, src }] once the manifest has been read
@@ -11033,6 +11053,14 @@
         note: '',         // what went wrong, shown under the player
         fails: 0,         // tracks that would not play, in a row
         fault: '',        // the name of the last refusal, for when something needs looking at
+        wantPlay: false,  // what was asked for - the element can be held back and still be "playing"
+        holding: false,   // paused on purpose, filling the buffer
+        holdNeed: 0,
+        holdSince: 0,
+        holdGrew: 0,      // when the buffer last grew: a buffer standing still ends the wait
+        holdAhead: 0,
+        seekAt: 0,        // when the bar was last dragged: after that a small cushion will do
+        fresh: false,     // a track that has not played a note yet: it gets going on a small cushion
         el: null,         // the <audio>, built on the first play
         id: '',           // the chosen track, also before anything is loaded
         srcId: '',        // the track actually loaded into the element
@@ -11046,7 +11074,58 @@
     };
 
     const musicFind = id => (music.tracks || []).find(t => t.id === id) || null;
-    const musicIsPlaying = () => !!music.el && !music.el.paused && !music.el.ended && music.srcId === music.id;
+    // What was asked for, not what the element does this second: while it is held back to fill the
+    // buffer it is still "playing" as far as the page and the buttons are concerned.
+    const musicIsPlaying = () => music.wantPlay && music.srcId === music.id;
+    // How many seconds are ready beyond the playhead, in the piece it is playing from.
+    function musicAhead() {
+        const el = music.el;
+        if (!el || !el.buffered || !el.buffered.length) return 0;
+        const at = el.currentTime;
+        for (let i = 0; i < el.buffered.length; i++) {
+            if (at >= el.buffered.start(i) - 0.5 && at <= el.buffered.end(i)) return el.buffered.end(i) - at;
+        }
+        return 0;
+    }
+    const musicWhole = () => {
+        const el = music.el;
+        return !!el && el.duration > 0 && el.buffered.length > 0
+            && el.buffered.end(el.buffered.length - 1) >= el.duration - 0.5;
+    };
+
+    // Pausing on purpose until the cushion is back. A paused element keeps filling its buffer, so
+    // this turns a stutter every two seconds into one honest wait.
+    function musicHold(seconds) {
+        if (!music.el || music.holding || !music.wantPlay) return;
+        music.holding = true;
+        music.holdNeed = seconds;
+        music.holdSince = Date.now();
+        music.holdGrew = Date.now();
+        music.holdAhead = musicAhead();
+        music.el.pause();
+        musicHoldTick();
+    }
+    function musicHoldTick() {
+        if (!music.holding) return;
+        const ahead = musicAhead();
+        // A browser fills the buffer of a paused track only so far and then stops. Standing still
+        // is the sign that waiting brings nothing more, whatever the cushion has reached.
+        if (ahead > music.holdAhead + 0.2) { music.holdAhead = ahead; music.holdGrew = Date.now(); }
+        const stillMs = Date.now() - music.holdGrew;
+        if (!music.el || !music.wantPlay || ahead >= music.holdNeed || musicWhole()
+            || stillMs > MUSIC_HOLD_STILL_MS || Date.now() - music.holdSince > MUSIC_HOLD_MAX_MS) {
+            const go = music.holding && music.wantPlay && music.el;
+            music.holding = false;
+            music.note = '';
+            if (go) music.el.play().catch(() => {});
+            if (music.sync) music.sync();
+            return;
+        }
+        music.note = 'Waiting for the track to load: ' + Math.floor(ahead) + ' of ' + music.holdNeed
+                   + ' seconds ready. These files are huge, and the game\'s server is not always quick.';
+        if (music.sync) music.sync();
+        setTimeout(musicHoldTick, 400);
+    }
     const musicOut = id => settings.musicExcluded.indexOf(id) >= 0;
     function musicTime(sec) {
         const s = Math.max(0, Math.floor(Number(sec) || 0));
@@ -11178,8 +11257,20 @@
             if (Date.now() - music.savedAt > MUSIC_SAVE_EVERY_MS) musicRemember();
             if (music.sync) music.sync();
         });
-        el.addEventListener('playing', () => { music.fails = 0; if (music.sync) music.sync(); });
+        el.addEventListener('playing', () => { music.fails = 0; music.fresh = false; if (music.sync) music.sync(); });
+        // Ran dry: hold back until there is something to play from again. Right after the bar was
+        // dragged the small cushion is enough - nobody wants to wait half a minute for a jump.
+        el.addEventListener('seeking', () => { music.seekAt = Date.now(); });
+        // A track that has not started yet, and a jump with the bar, get going on the small
+        // cushion - nobody waits half a minute for the first note. The big one is for a track that
+        // was running and ran out: there a longer wait buys a longer stretch of music.
+        el.addEventListener('waiting', () => musicHold(
+            music.fresh || Date.now() - music.seekAt < 4000 ? MUSIC_AHEAD_START : MUSIC_AHEAD_RESUME));
+        // Even when the first notes are already there, a small cushion first: on a quick line
+        // that is a fraction of a second.
+        el.addEventListener('loadeddata', () => musicHold(MUSIC_AHEAD_START));
         el.addEventListener('pause', () => { musicRemember(); if (music.sync) music.sync(); });
+        el.addEventListener('progress', () => { if (music.sync) music.sync(); });
         el.addEventListener('ended', () => { music.seekTo = 0; musicSkip(1); });
         // A file that will not play is skipped, but a run of them stops rather than racing through
         // the whole soundtrack.
@@ -11205,22 +11296,33 @@
         const s = soundState();
         if (s && s.music) soundClick('music-enabled-toggle');
         const el = musicElement();
+        music.wantPlay = true;
         if (music.srcId !== track.id) {
             music.id = track.id;
             music.srcId = track.id;
             music.note = '';
             el.src = track.src;
+            music.fresh = true;
+            el.preload = 'auto';   // keep filling the buffer even while it is held back
             el.load();
         }
         el.play().catch(e => {
             music.fault = (e && e.name) || 'unknown';
+            // Holding back pauses the element the moment it asks for data, and that turns the
+            // play() just started into an AbortError. Nothing is wrong there - the hold plays it.
+            if (music.fault === 'AbortError') return;
             music.note = 'The browser would not start the sound. Click the page once, then press Play again.';
             if (music.redraw) music.redraw();
         });
         musicRemember();
         if (music.sync) music.sync();
     }
-    function musicPause() { if (music.el) music.el.pause(); }
+    function musicPause() {
+        music.wantPlay = false;
+        music.holding = false;
+        music.note = '';
+        if (music.el) music.el.pause();
+    }
     function musicToggle() {
         if (musicIsPlaying()) { musicPause(); return; }
         const id = musicFind(music.id) ? music.id : musicOrder()[0];
@@ -11228,7 +11330,7 @@
     }
     function musicSkip(dir) {
         const order = musicOrder();
-        if (!order.length) return;
+        if (!order.length) { musicPause(); return; }
         // Back in the first seconds means the track before; later in it means this one again.
         if (dir < 0 && music.el && music.srcId === music.id && music.el.currentTime > 3) {
             music.el.currentTime = 0;
@@ -11323,6 +11425,10 @@
         line.innerHTML = '<span class="mcfo-mus__time"></span>'
                        + '<input type="range" class="mcfo-mus__seek" min="0" max="1" step="1" value="0" aria-label="Position in the track">'
                        + '<span class="mcfo-mus__time"></span>';
+        const buffered = document.createElement('div');
+        buffered.className = 'mcfo-mus__buf';
+        buffered.innerHTML = '<span></span>';
+        const bufFill = buffered.firstChild;
         const seek = line.querySelector('.mcfo-mus__seek');
         const atText = line.children[0], ofText = line.children[2];
         let seeking = false;
@@ -11498,6 +11604,10 @@
             }
             atText.textContent = musicTime(at);
             ofText.textContent = duration ? musicTime(duration) : '--:--';
+            const el2 = music.el;
+            const end = loaded && el2 && el2.buffered.length ? el2.buffered.end(el2.buffered.length - 1) : 0;
+            bufFill.style.width = duration ? Math.min(100, (end / duration) * 100) + '%' : '0';
+            buffered.toggleAttribute('data-thin', music.holding);
             if (marked && marked.dataset.id !== music.id) { marked.removeAttribute('data-current'); marked = null; }
             if (!marked && music.id) {
                 marked = list.querySelector('.mcfo-mus__song[data-id="' + CSS.escape(music.id) + '"]');
@@ -11508,7 +11618,9 @@
             note.hidden = !music.note;
         }
 
-        box.append(now, bar, line, vol, tools, list, note);
+        // The word about waiting belongs where the eye is - right under the bar, not below the
+        // whole list.
+        box.append(now, bar, line, buffered, note, vol, tools, list);
         buildList();
         music.sync = sync;
         return box;
