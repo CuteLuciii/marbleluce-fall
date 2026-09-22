@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.22.1
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player over the game’s soundtrack, performance levels, how-to and what’s new.
+// @version      6.23
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -246,7 +246,7 @@
             { key: 'settingsButton', label: 'Settings button',
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
-        { title: 'Sound', blurb: 'Sound effects, and a music player over the game\'s whole soundtrack.', render: 'sound' },
+        { title: 'Sound', blurb: 'Sound effects, and a music player over the game\'s whole soundtrack, with a bar for the page.', render: 'sound' },
         { title: 'King tile', blurb: 'King name, toll and beverage buttons on the tile.', items: [
             { key: 'kingName', label: 'King name', hint: 'Top left on the king tile.' },
             { key: 'kingToll', label: 'Toll',      hint: 'Top right on the king tile.' },
@@ -685,6 +685,10 @@
     settingDefaults.musicVolume = 50;
     settings.musicVolume = Number.isFinite(Number(stored.musicVolume))
         ? Math.max(0, Math.min(100, Math.round(Number(stored.musicVolume)))) : 50;
+    // The bar on the page (6.23): there whenever the player is, hidden with its own button or
+    // here. Where it sits is kept with the windows, not here.
+    settingDefaults.musicBar = true;
+    settings.musicBar = stored.musicBar !== false;
     settingDefaults.musicExcluded = [];
     settings.musicExcluded = Array.isArray(stored.musicExcluded)
         ? stored.musicExcluded.filter(p => typeof p === 'string' && p.charAt(0) === '/') : [];
@@ -1583,6 +1587,7 @@
         .mcfo-set__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
         .mcfo-set__label { font-weight: 700; color: #e6f0f7; font-size: 13.5px; }
         .mcfo-set__hint { font-size: 12px; color: #8da2b7; }
+        .mcfo-set__hint--wide { flex: 1; min-width: 0; }
 
         /* The switch. A real checkbox, only visually hidden, so keyboard and screen readers keep
            working; the pill next to it is drawn from its :checked state. Same green as the
@@ -1620,6 +1625,57 @@
         }
         .mcfo-set__reset:hover { color: #fff; border-color: #4d7ea6; background: #16283a; }
         .mcfo-set__reset[disabled] { visibility: hidden; }
+
+        /* Gear and music note in one cell of the header grid (11f). */
+        .mcfo-hdr { display: flex; align-items: center; gap: 6px; }
+        .mcfo-note {
+            width: 32px; height: 32px; padding: 0; box-sizing: border-box;
+            display: grid; place-items: center;
+            border: 1px solid #355066; border-radius: 8px; background: #111822; color: #d8e3ef; cursor: pointer;
+        }
+        .mcfo-note:hover { border-color: #4d7ea6; background: #16283a; }
+        .mcfo-note[aria-pressed="true"] { border-color: #3fae72; color: #8ee0b0; }
+        .mcfo-note svg { width: 17px; height: 17px; display: block; }
+
+        /* The player bar on the page (11f). Under the windows, over the game. */
+        .mcfo-bar {
+            position: fixed; z-index: 10035; width: 268px; box-sizing: border-box;
+            display: flex; flex-direction: column; gap: 5px;
+            padding: 8px 10px 0; border: 1px solid #2c4254; border-radius: 10px;
+            background: rgba(12, 22, 32, 0.94); box-shadow: 0 8px 22px rgba(0,0,0,0.45);
+            font: 500 12px/1.3 system-ui, sans-serif; color: #e6f0f7;
+            cursor: grab; user-select: none; overflow: hidden;
+        }
+        .mcfo-bar[data-drag] { cursor: grabbing; }
+        .mcfo-bar__top { display: flex; align-items: center; gap: 6px; }
+        .mcfo-bar__title {
+            flex: 1; min-width: 0;
+            color: #e6f0f7; font: 800 12.5px/1.25 system-ui, sans-serif;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .mcfo-bar__sub {
+            font-size: 11px; color: #8da2b7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            min-height: 14px;
+        }
+        .mcfo-bar__sub[data-wait] { color: #e0b84a; }
+        .mcfo-bar__row { display: flex; align-items: center; gap: 5px; padding-bottom: 7px; }
+        .mcfo-barbtn {
+            flex: none; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; cursor: pointer;
+            border: 1px solid #2c4254; border-radius: 7px; background: #111f2b; color: #cfe2f0;
+        }
+        .mcfo-barbtn:hover { border-color: #4d7ea6; background: #16283a; color: #fff; }
+        .mcfo-barbtn[disabled] { opacity: 0.35; cursor: default; }
+        .mcfo-barbtn[aria-pressed="true"] { background: #2f9e62; border-color: #3fae72; color: #fff; }
+        .mcfo-barbtn svg { width: 13px; height: 13px; fill: currentColor; }
+        .mcfo-bar__x { width: 22px; height: 22px; border-color: transparent; background: transparent; color: #7f97a9; }
+        .mcfo-bar__x svg { width: 11px; height: 11px; fill: none; }
+        .mcfo-bar__vol { flex: 1; min-width: 0; accent-color: #2f9e62; cursor: pointer; }
+        .mcfo-bar__line {
+            position: relative; height: 4px; margin: 0 -10px; background: #16283a; cursor: pointer;
+        }
+        .mcfo-bar__line > span { position: absolute; left: 0; top: 0; height: 100%; }
+        .mcfo-bar__buf { background: #33607f; }
+        .mcfo-bar__at { background: #2f9e62; }
 
         /* The music player on the Sound page (11e). */
         .mcfo-mus { display: flex; flex-direction: column; gap: 9px; padding: 2px 14px 12px; }
@@ -2775,11 +2831,12 @@
         '[data-role="diamonds-purchase-link"]',   // the game's own sign on the Diamonds card (app.js metricCellDom)
         '.mcfo-drink--icon',   // a beverage as a symbol: the symbol says what it is, the button is the skin's (6.12)
         '.mcfo-gear',          // the settings gear top right (6.14)
+        '.mcfo-note', '.mcfo-barbtn',   // the note in the header and the buttons of the player bar (6.23)
     ];
     const SKIN_FILLED = ['[data-role="bid-rail"] button[data-bid-amount]', '[data-mcfo-bid]', '.mcfo-drink:not(.mcfo-drink--icon)'];
     const SKIN_EDGED = ['.mcfo-bev__buy', '.mcfo-reb__tier'];
     const SKIN_POPUPS = ['.mcfo-menu', '.mcf-chat__suggestions', '[data-role="sound-utility-panel"]'];
-    const SKIN_PANELS = ['.mcfo-set__card', '.mcfo-set__tile', '.mcfo-theme__pick'];
+    const SKIN_PANELS = ['.mcfo-set__card', '.mcfo-set__tile', '.mcfo-theme__pick', '.mcfo-bar'];
     const skinSel = (S, list, tail = '') => list.map(x => `${S} ${x}${tail}`).join(', ');
 
     const SKINS = {
@@ -9757,12 +9814,18 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.22.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.23';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.23', date: '2026-09-22', items: [
+            'New: a player bar you can put anywhere on the page. Skipping or pausing a track no longer means going through the settings - the bar sits where you drag it, remembers the spot, and is still there after a reload.',
+            'It shows what is playing and from which album, has previous, play, next, shuffle and volume, and a line at the bottom for how far the track has got and how much of it is loaded. Clicking that line jumps to another place in the track.',
+            'A music note next to the gear shows and hides the bar, and the button on the bar opens the whole soundtrack on the Sound page. Hiding the bar does not stop the music.',
+            'The bar takes the look of your theme, Deluxe skins included.',
+        ] },
         { v: '6.22.1', date: '2026-09-22', items: [
             'Fixed: a track could fall silent after a second or two, or stutter its way through the second half. The soundtrack is kept as raw WAV files of 12 to 69 MB, which need 192 kilobytes every single second to play - and the game\'s server sends these files at anything between 115 kilobytes and 1.2 megabytes a second. Whenever it sends less than a track eats, the music runs out of road.',
             'The player now waits until enough of the track has arrived before it plays on, and says so while it waits: one honest pause instead of a hiccup every two seconds. It stops waiting as soon as nothing more is arriving, so it never hangs about for nothing.',
@@ -9997,6 +10060,7 @@
             ] },
             { title: 'Music', items: [
                 'Settings › Sound: the music player lays the game’s whole soundtrack out by album. Click a track to hear that one, take its tick off to keep it out of the rotation, or tick a whole album on or off at its heading.',
+                'The note next to the gear puts a small player on the page: drag it where you like and it stays there. Previous, play, next, shuffle, volume, and a line that shows how far the track has got and how much of it has loaded - click the line to jump.',
                 'Shuffle plays everything once before anything comes round again. The bar under the buttons goes anywhere in a track, and where you stopped is where it starts next time — nothing ever begins by itself.',
                 'While the player is on, the game plays no music of its own. Switch it off and the game’s own music controls are back where they were.',
             ] },
@@ -10230,7 +10294,7 @@
         if (section.render === 'theme') return ['themeId', 'themeHue', 'themeTint', 'themeAccent', 'themeGradient', 'themePattern', 'themeRandom', 'themeRotate', 'themeFx', 'boardClear'];
         if (section.render === 'performance') return ['perfLevel', 'perfFpsMeter', ...PERF_LEVERS.map(l => l.key)];
         // The game keeps its own sound (11c); only the player's own settings are ours (11e).
-        if (section.render === 'sound') return ['musicPlayer', 'musicShuffle', 'musicVolume'];
+        if (section.render === 'sound') return ['musicPlayer', 'musicBar', 'musicShuffle', 'musicVolume'];
         const keys = [];
         for (const item of sectionItems(section)) { keys.push(item.key); for (const sub of itemSubs(item)) keys.push(sub.key); }
         if (section.throne) keys.push('throneDrinkSet');
@@ -10499,22 +10563,61 @@
     const GEAR_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true">'
         + '<circle cx="12" cy="12" r="3.3" fill="none" stroke="currentColor" stroke-width="1.8"/>'
         + '<path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.4h-4l-.4 2.5A7.5 7.5 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 2.6-1.5l2.4.9 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
-    function buildSettingsButton() {
+    // The gear and the music note share one cell of the header grid: profile-sound-cell is a two
+    // column grid (account card | button), so a third child would drop into a new row. They go
+    // into a box of their own instead.
+    function buildHeaderButtons() {
         document.documentElement.setAttribute('data-mcfo-gear', settings.settingsButton ? '1' : '0');
         const cell = role('profile-sound-cell');
-        let btn = document.querySelector('.mcfo-gear');
-        if (!settings.settingsButton || !cell) { if (btn) btn.remove(); return; }
-        if (btn && btn.parentElement === cell) return;
-        if (btn) btn.remove();
-        btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'mcfo-gear';
-        btn.title = 'MarbleLuceFall settings';
-        btn.setAttribute('aria-label', 'MarbleLuceFall settings');
-        btn.innerHTML = GEAR_SVG;
-        btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); showSettings(); });
-        const native = role('sound-utility-toggle');
-        if (native) native.after(btn); else cell.appendChild(btn);
+        const wantNote = settings.musicPlayer;
+        let box = document.querySelector('.mcfo-hdr');
+        if ((!settings.settingsButton && !wantNote) || !cell) { if (box) box.remove(); return; }
+        if (!box || box.parentElement !== cell) {
+            if (box) box.remove();
+            box = document.createElement('div');
+            box.className = 'mcfo-hdr';
+            const native = role('sound-utility-toggle');
+            if (native) native.after(box); else cell.appendChild(box);
+        }
+
+        let note = box.querySelector('.mcfo-note');
+        if (wantNote && !note) {
+            note = document.createElement('button');
+            note.type = 'button';
+            note.className = 'mcfo-note';
+            note.innerHTML = NOTE_SVG;
+            note.addEventListener('click', e => {
+                e.preventDefault(); e.stopPropagation();
+                settings.musicBar = !settings.musicBar;
+                saveSettings();
+                buildMusicBar();
+                buildHeaderButtons();
+            });
+            box.prepend(note);
+        } else if (!wantNote && note) {
+            note.remove();
+            note = null;
+        }
+        if (note) {
+            const on = settings.musicBar;
+            note.title = on ? 'Hide the player bar' : 'Show the player bar';
+            note.setAttribute('aria-label', note.title);
+            note.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+
+        let gear = box.querySelector('.mcfo-gear');
+        if (settings.settingsButton && !gear) {
+            gear = document.createElement('button');
+            gear.type = 'button';
+            gear.className = 'mcfo-gear';
+            gear.title = 'MarbleLuceFall settings';
+            gear.setAttribute('aria-label', 'MarbleLuceFall settings');
+            gear.innerHTML = GEAR_SVG;
+            gear.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); showSettings(); });
+            box.appendChild(gear);
+        } else if (!settings.settingsButton && gear) {
+            gear.remove();
+        }
     }
 
     // The theme page: one tile per theme with its colours, and for Custom a hue and an
@@ -11069,10 +11172,17 @@
         filter: '',       // the search box, kept while the window stays open
         open: new Set(),  // the albums folded open
         savedAt: 0,
-        sync: null,       // light refresh of the open page (bar, buttons, marker)
-        redraw: null,     // full rebuild of the open page (list, counts)
+        sync: null,       // light refresh of the Sound page (bar, buttons, marker)
+        barSync: null,    // light refresh of the bar on the page (11f)
+        redraw: null,     // full rebuild of the Sound page (list, counts)
     };
 
+    // Two views can be open at once - the Sound page and the bar on the page. Both are refreshed
+    // from here, so neither has to know about the other.
+    function musicSync() {
+        if (music.sync) { try { music.sync(); } catch (e) {} }
+        if (music.barSync) { try { music.barSync(); } catch (e) {} }
+    }
     const musicFind = id => (music.tracks || []).find(t => t.id === id) || null;
     // What was asked for, not what the element does this second: while it is held back to fill the
     // buffer it is still "playing" as far as the page and the buttons are concerned.
@@ -11118,12 +11228,12 @@
             music.holding = false;
             music.note = '';
             if (go) music.el.play().catch(() => {});
-            if (music.sync) music.sync();
+            musicSync();
             return;
         }
         music.note = 'Waiting for the track to load: ' + Math.floor(ahead) + ' of ' + music.holdNeed
-                   + ' seconds ready. These files are huge, and the game\'s server is not always quick.';
-        if (music.sync) music.sync();
+                   + ' seconds ready. The game\'s server is not always quick with these files.';
+        musicSync();
         setTimeout(musicHoldTick, 400);
     }
     const musicOut = id => settings.musicExcluded.indexOf(id) >= 0;
@@ -11168,6 +11278,7 @@
             music.loading = null;
             musicRestore();
             if (music.redraw) music.redraw();
+            musicSync();
             return list;
         })();
         return music.loading;
@@ -11251,13 +11362,13 @@
         el.addEventListener('loadedmetadata', () => {
             if (music.seekTo > 0 && music.seekTo < el.duration - 1) el.currentTime = music.seekTo;
             music.seekTo = 0;
-            if (music.sync) music.sync();
+            musicSync();
         });
         el.addEventListener('timeupdate', () => {
             if (Date.now() - music.savedAt > MUSIC_SAVE_EVERY_MS) musicRemember();
-            if (music.sync) music.sync();
+            musicSync();
         });
-        el.addEventListener('playing', () => { music.fails = 0; music.fresh = false; if (music.sync) music.sync(); });
+        el.addEventListener('playing', () => { music.fails = 0; music.fresh = false; musicSync(); });
         // Ran dry: hold back until there is something to play from again. Right after the bar was
         // dragged the small cushion is enough - nobody wants to wait half a minute for a jump.
         el.addEventListener('seeking', () => { music.seekAt = Date.now(); });
@@ -11269,8 +11380,8 @@
         // Even when the first notes are already there, a small cushion first: on a quick line
         // that is a fraction of a second.
         el.addEventListener('loadeddata', () => musicHold(MUSIC_AHEAD_START));
-        el.addEventListener('pause', () => { musicRemember(); if (music.sync) music.sync(); });
-        el.addEventListener('progress', () => { if (music.sync) music.sync(); });
+        el.addEventListener('pause', () => { musicRemember(); musicSync(); });
+        el.addEventListener('progress', () => { musicSync(); });
         el.addEventListener('ended', () => { music.seekTo = 0; musicSkip(1); });
         // A file that will not play is skipped, but a run of them stops rather than racing through
         // the whole soundtrack.
@@ -11315,7 +11426,7 @@
             if (music.redraw) music.redraw();
         });
         musicRemember();
-        if (music.sync) music.sync();
+        musicSync();
     }
     function musicPause() {
         music.wantPlay = false;
@@ -11652,8 +11763,202 @@
             redraw();
         });
         wrap.appendChild(row);
-        if (settings.musicPlayer) wrap.appendChild(musicPlayerUi(redraw));
+        if (settings.musicPlayer) {
+            const sub = document.createElement('label');
+            sub.className = 'mcfo-set__sub';
+            sub.innerHTML = '<span class="mcfo-set__sublabel">Player bar</span>'
+                          + '<span class="mcfo-set__hint mcfo-set__hint--wide"></span>'
+                          + '<input type="checkbox" class="mcfo-switch__input">'
+                          + '<span class="mcfo-switch" aria-hidden="true"></span>';
+            sub.querySelector('.mcfo-set__hint').textContent = 'A small player to drag anywhere on the page. '
+                + 'The note next to the gear shows and hides it.';
+            const barOn = sub.querySelector('input');
+            barOn.checked = settings.musicBar;
+            barOn.addEventListener('change', () => {
+                settings.musicBar = barOn.checked;
+                saveSettings();
+                buildMusicBar();
+                buildHeaderButtons();
+            });
+            wrap.appendChild(sub);
+            wrap.appendChild(musicPlayerUi(redraw));
+        }
         return wrap;
+    }
+
+    // =========================================================================================
+    // 11f. THE PLAYER BAR: THE MUSIC PLAYER ON THE PAGE (6.23)
+    // =========================================================================================
+    // Skipping a track should not mean three clicks through the settings. This is the same player
+    // as on the Sound page - it holds nothing of its own, it reads the state above and writes it
+    // back - in a small box that can be dragged anywhere and stays where it was put. Its place is
+    // kept with the windows, under a path of its own.
+    const MUSIC_BAR_KEY = '#musicbar';
+    const MUSIC_BAR_ICONS = {
+        close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+        list: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h11M4 12h11M4 17h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="18" cy="16.5" r="2.6" fill="currentColor"/><path d="M20.6 16.5V8l-3 .6" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+    };
+    // A note for the header, drawn like the gear next to it.
+    const NOTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true">'
+        + '<path d="M10 17.4V6.6l8-1.6v10.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
+        + '<circle cx="7.6" cy="17.6" r="2.7" fill="currentColor"/>'
+        + '<circle cx="15.6" cy="15.6" r="2.7" fill="currentColor"/></svg>';
+
+    function buildMusicBar() {
+        const want = settings.musicPlayer && settings.musicBar;
+        let bar = document.querySelector('.mcfo-bar');
+        if (!want) {
+            if (bar) bar.remove();
+            music.barSync = null;
+            return;
+        }
+        if (bar && bar.isConnected) return;
+        // The bar needs the names, so the list is fetched here as well - once, a small file.
+        void musicLoad();
+
+        bar = document.createElement('div');
+        bar.className = 'mcfo-bar';
+        bar.innerHTML =
+              '<div class="mcfo-bar__top">'
+            +   '<span class="mcfo-bar__title"></span>'
+            +   '<button type="button" class="mcfo-bar__x mcfo-barbtn" title="Hide the bar" aria-label="Hide the bar">'
+            +     MUSIC_BAR_ICONS.close + '</button>'
+            + '</div>'
+            + '<div class="mcfo-bar__sub"></div>'
+            + '<div class="mcfo-bar__row"></div>'
+            + '<div class="mcfo-bar__line" title="Jump to another place in the track">'
+            +   '<span class="mcfo-bar__buf"></span><span class="mcfo-bar__at"></span></div>';
+        document.body.appendChild(bar);
+
+        const title = bar.querySelector('.mcfo-bar__title');
+        const sub = bar.querySelector('.mcfo-bar__sub');
+        const row = bar.querySelector('.mcfo-bar__row');
+        const line = bar.querySelector('.mcfo-bar__line');
+        const bufFill = bar.querySelector('.mcfo-bar__buf');
+        const atFill = bar.querySelector('.mcfo-bar__at');
+
+        const button = (label, icon) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'mcfo-barbtn';
+            b.innerHTML = icon;
+            b.title = label;
+            b.setAttribute('aria-label', label);
+            return b;
+        };
+        const bPrev = button('Previous track', MUSIC_ICONS.prev);
+        const bPlay = button('Play', MUSIC_ICONS.play);
+        const bNext = button('Next track', MUSIC_ICONS.next);
+        const bShuffle = button('Shuffle', MUSIC_ICONS.shuffle);
+        const bList = button('The whole soundtrack', MUSIC_BAR_ICONS.list);
+        bPlay.classList.add('mcfo-barbtn--play');
+        const vol = document.createElement('input');
+        vol.type = 'range';
+        vol.className = 'mcfo-bar__vol';
+        vol.min = '0'; vol.max = '100'; vol.step = '1';
+        vol.value = String(settings.musicVolume);
+        vol.title = 'Volume';
+        vol.setAttribute('aria-label', 'Volume');
+        row.append(bPrev, bPlay, bNext, bShuffle, vol, bList);
+
+        bPrev.addEventListener('click', () => musicSkip(-1));
+        bNext.addEventListener('click', () => musicSkip(1));
+        bPlay.addEventListener('click', musicToggle);
+        bShuffle.addEventListener('click', () => {
+            settings.musicShuffle = !settings.musicShuffle;
+            music.queue = [];
+            saveSettings();
+            musicSync();
+        });
+        vol.addEventListener('input', () => {
+            settings.musicVolume = Math.max(0, Math.min(100, Number(vol.value) || 0));
+            if (music.el) music.el.volume = settings.musicVolume / 100;
+            saveSettings();
+        });
+        // The way to the list: the Sound page, opened on the spot. Only from the button - the
+        // title and the line under it are what the box gets dragged by, and a box made of nothing
+        // but buttons cannot be moved anywhere.
+        bList.addEventListener('click', () => { settingsView = 'Sound'; showSettings(); });
+        bar.querySelector('.mcfo-bar__x').addEventListener('click', () => {
+            settings.musicBar = false;
+            saveSettings();
+            buildMusicBar();
+            buildHeaderButtons();
+        });
+
+        // Jumping: the line is the track from end to end.
+        line.addEventListener('pointerdown', e => {
+            const el = music.el;
+            if (!el || !el.duration) return;
+            const r = line.getBoundingClientRect();
+            music.seekAt = Date.now();
+            el.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * el.duration;
+            musicRemember();
+            musicSync();
+        });
+
+        // Dragging: anywhere on the box that is not a control.
+        let dragging = false, dx = 0, dy = 0;
+        function place(left, top) {
+            const w = bar.offsetWidth, h = bar.offsetHeight;
+            bar.style.left = Math.round(Math.max(0, Math.min(left, innerWidth - w))) + 'px';
+            bar.style.top = Math.round(Math.max(0, Math.min(top, innerHeight - h))) + 'px';
+        }
+        bar.addEventListener('pointerdown', e => {
+            if (e.button !== 0 || e.target.closest('button, input, .mcfo-bar__line')) return;
+            const r = bar.getBoundingClientRect();
+            dx = e.clientX - r.left; dy = e.clientY - r.top;
+            dragging = true;
+            // A pointer id the browser no longer knows about throws here; the drag works without
+            // the capture, it just stops at the edge of the box.
+            try { bar.setPointerCapture(e.pointerId); } catch (err) {}
+            bar.setAttribute('data-drag', '');
+            e.preventDefault();
+        });
+        bar.addEventListener('pointermove', e => { if (dragging) place(e.clientX - dx, e.clientY - dy); });
+        const stop = e => {
+            if (!dragging) return;
+            dragging = false;
+            bar.removeAttribute('data-drag');
+            try { bar.releasePointerCapture(e.pointerId); } catch (err) {}
+            saveWinState(MUSIC_BAR_KEY, { left: parseInt(bar.style.left, 10), top: parseInt(bar.style.top, 10) });
+        };
+        bar.addEventListener('pointerup', stop);
+        bar.addEventListener('pointercancel', stop);
+
+        // Where it opens: where it was left, otherwise bottom left, clear of the game's footer.
+        const saved = loadWinState()[MUSIC_BAR_KEY] || {};
+        place(Number.isFinite(saved.left) ? saved.left : 16,
+              Number.isFinite(saved.top) ? saved.top : innerHeight - 170);
+        addEventListener('resize', () => {
+            if (!bar.isConnected) return;
+            place(parseInt(bar.style.left, 10) || 0, parseInt(bar.style.top, 10) || 0);
+        });
+
+        music.barSync = function () {
+            const track = musicFind(music.id);
+            title.textContent = track ? track.title : 'Nothing chosen yet';
+            title.title = (track ? track.title + ' · ' + track.album + ' — ' : '') + 'drag to move the bar';
+            // While it waits for the track to arrive, the line under the title says so: on the bar
+            // there is no room for the whole sentence the Sound page shows.
+            sub.textContent = music.holding
+                ? 'Loading... ' + Math.floor(musicAhead()) + '/' + music.holdNeed + 's'
+                : (track ? track.album : '');
+            sub.toggleAttribute('data-wait', music.holding);
+            const playing = musicIsPlaying();
+            bPlay.innerHTML = playing ? MUSIC_ICONS.pause : MUSIC_ICONS.play;
+            bPlay.title = playing ? 'Pause' : 'Play';
+            bPlay.setAttribute('aria-label', bPlay.title);
+            bShuffle.setAttribute('aria-pressed', settings.musicShuffle ? 'true' : 'false');
+            if (document.activeElement !== vol) vol.value = String(settings.musicVolume);
+            const el = music.el;
+            const loaded = el && music.srcId === music.id;
+            const duration = loaded && Number.isFinite(el.duration) ? el.duration : 0;
+            const end = loaded && el.buffered.length ? el.buffered.end(el.buffered.length - 1) : 0;
+            atFill.style.width = duration ? Math.min(100, (el.currentTime / duration) * 100) + '%' : '0';
+            bufFill.style.width = duration ? Math.min(100, (end / duration) * 100) + '%' : '0';
+        };
+        music.barSync();
     }
 
     // =========================================================================================
@@ -12018,7 +12323,8 @@
         document.documentElement.setAttribute('data-mcfo-chatrail', settings.chatRail ? '1' : '0');
         document.documentElement.setAttribute('data-mcfo-sugg', settings.chatSuggest ? '1' : '0');
         applyBoardClear();
-        buildSettingsButton();
+        buildHeaderButtons();
+        buildMusicBar();
         soundDefaultOnce();
         drawChatRail();
         drawChatPop();

@@ -16,7 +16,8 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **On the throne** — opt-in: when you take the crown, the toll goes to your value and the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).
 - **Enhanced chat** — hide system lines you don't need, text sizes, grouped messages, pop the chat out into a window, a compact cosmetics switch.
 - **Board fit** — the board sizes itself to your screen; see-through board frames.
-- **Music player** — the game's whole soundtrack by album: pick any track, shuffle it, take off the ones you would rather not hear, drag the bar anywhere in a track. It streams instead of downloading, and it remembers where you stopped. The game plays straight through one list, and Next is the only way along it.
+- **Music player** — the game's whole soundtrack by album: pick any track, shuffle it, take off the ones you would rather not hear, jump anywhere in a track. It streams instead of downloading the whole file, waits when the game's server sends the music slower than it plays, and remembers where you stopped. The game itself plays straight through one list, and Next is the only way along it.
+- **Player bar** — a small player to drag anywhere on the page: what is playing, previous, play, next, shuffle, volume and the loading line. It stays where you put it.
 - **Settings gear** — one click to all settings, including the game's own sound and graphics levels.
 - **Performance levels** and **Deluxe effects** (full, subtle, off) for slower machines.
 - **How-to** and **What's new** inside the script.
