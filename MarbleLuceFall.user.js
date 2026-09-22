@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.21.2
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, performance levels, how-to and what’s new.
+// @version      6.22.0
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player over the game’s soundtrack, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -246,7 +246,7 @@
             { key: 'settingsButton', label: 'Settings button',
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
-        { title: 'Sound', blurb: 'The game\'s sound effects and music. Off unless you turn them on.', render: 'sound' },
+        { title: 'Sound', blurb: 'Sound effects, and a music player over the game\'s whole soundtrack.', render: 'sound' },
         { title: 'King tile', blurb: 'King name, toll and beverage buttons on the tile.', items: [
             { key: 'kingName', label: 'King name', hint: 'Top left on the king tile.' },
             { key: 'kingToll', label: 'Toll',      hint: 'Top right on the king tile.' },
@@ -675,6 +675,19 @@
     settingDefaults.throneDrinkSet = [];
     settings.throneDrinkSet = Array.isArray(stored.throneDrinkSet)
         ? stored.throneDrinkSet.filter(k => /^(water|lava|milk|acid)\|(small|medium|large)\|(gold|diamonds)$/.test(k)) : [];
+    // The music player (6.22, section 11e): off unless switched on, and until then the game plays
+    // its music its own way. The tracks taken out of the rotation are kept as the paths the game's
+    // own manifest gives them; anything else found in storage is dropped rather than guessed at.
+    settingDefaults.musicPlayer = false;
+    settings.musicPlayer = stored.musicPlayer === true;
+    settingDefaults.musicShuffle = false;
+    settings.musicShuffle = stored.musicShuffle === true;
+    settingDefaults.musicVolume = 50;
+    settings.musicVolume = Number.isFinite(Number(stored.musicVolume))
+        ? Math.max(0, Math.min(100, Math.round(Number(stored.musicVolume)))) : 50;
+    settingDefaults.musicExcluded = [];
+    settings.musicExcluded = Array.isArray(stored.musicExcluded)
+        ? stored.musicExcluded.filter(p => typeof p === 'string' && p.charAt(0) === '/') : [];
 
     // What a lever is set to right now: from the chosen level, or the Custom mix.
     function perfValue(key) {
@@ -1607,6 +1620,63 @@
         }
         .mcfo-set__reset:hover { color: #fff; border-color: #4d7ea6; background: #16283a; }
         .mcfo-set__reset[disabled] { visibility: hidden; }
+
+        /* The music player on the Sound page (11e). */
+        .mcfo-mus { display: flex; flex-direction: column; gap: 9px; padding: 2px 14px 12px; }
+        .mcfo-mus__now { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+        .mcfo-mus__title { flex: 1; min-width: 0; font-weight: 800; font-size: 13.5px; color: #e6f0f7;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mcfo-mus__albumline { flex: none; max-width: 45%; font-size: 12px; color: #8da2b7;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mcfo-mus__row { display: flex; align-items: center; gap: 8px; }
+        .mcfo-mus__btn {
+            flex: none; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; cursor: pointer;
+            border: 1px solid #2c4254; border-radius: 8px; background: #111f2b; color: #cfe2f0;
+        }
+        .mcfo-mus__btn:hover { border-color: #4d7ea6; background: #16283a; color: #fff; }
+        .mcfo-mus__btn[disabled] { opacity: 0.35; cursor: default; }
+        .mcfo-mus__btn[aria-pressed="true"] { background: #2f9e62; border-color: #3fae72; color: #fff; }
+        .mcfo-mus__btn--play { width: 36px; height: 36px; }
+        .mcfo-mus__btn svg { width: 15px; height: 15px; fill: currentColor; }
+        .mcfo-mus__btn--play svg { width: 18px; height: 18px; }
+        .mcfo-mus__count { margin-left: auto; font-size: 12px; color: #8da2b7; white-space: nowrap; }
+        .mcfo-mus__time { flex: none; min-width: 38px; font-size: 11.5px; color: #9ab0c0;
+            font-variant-numeric: tabular-nums; text-align: center; }
+        .mcfo-mus__seek { flex: 1; min-width: 0; accent-color: #2f9e62; cursor: pointer; }
+        .mcfo-mus__seek[disabled] { opacity: 0.35; cursor: default; }
+        .mcfo-mus__search {
+            flex: 1; min-width: 0; border: 1px solid #2c4254; border-radius: 6px;
+            background: #0c1620; color: #e6f0f7; font: inherit; font-size: 12px; padding: 5px 8px;
+        }
+        .mcfo-mus__search:focus { outline: none; border-color: #4d7ea6; }
+        .mcfo-mus__list {
+            max-height: 250px; overflow-y: auto; overscroll-behavior: contain;
+            border: 1px solid #192a38; border-radius: 8px; background: #0c1620;
+        }
+        .mcfo-mus__head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid #14212d; }
+        .mcfo-mus__list > .mcfo-mus__head:first-child { border-top: 0; }
+        .mcfo-mus__fold {
+            flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; cursor: pointer;
+            color: #cfe2f0; font: inherit; font-size: 12.5px; font-weight: 700; padding: 0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .mcfo-mus__fold::before { content: '\\203a '; display: inline-block; width: 12px; color: #6d8699; transition: transform 140ms ease; }
+        .mcfo-mus__head[data-open] .mcfo-mus__fold::before { transform: rotate(90deg); }
+        .mcfo-mus__fold:hover { color: #fff; }
+        .mcfo-mus__num { flex: none; font-size: 11px; color: #7f97a9; font-variant-numeric: tabular-nums; }
+        .mcfo-mus__tick { flex: none; accent-color: #2f9e62; cursor: pointer; margin: 0; }
+        .mcfo-mus__songs { padding: 0 0 4px; }
+        .mcfo-mus__song { display: flex; align-items: center; gap: 8px; padding: 2px 10px 2px 22px; }
+        .mcfo-mus__song:hover { background: rgba(77, 126, 166, 0.09); }
+        .mcfo-mus__song[data-current] .mcfo-mus__songname { color: #ffd479; font-weight: 700; }
+        .mcfo-mus__song[data-playing] .mcfo-mus__songname::before { content: '\\25b8\\00a0'; }
+        .mcfo-mus__songname {
+            flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; cursor: pointer;
+            color: #b9cddd; font: inherit; font-size: 12px; padding: 3px 0;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .mcfo-mus__songname:hover { color: #fff; }
+        .mcfo-mus__note { font-size: 12px; color: #9ab0c0; }
 
         .mcfo-seg { display: inline-flex; border: 1px solid #2c4254; border-radius: 8px; overflow: hidden; }
         .mcfo-seg button {
@@ -9683,12 +9753,19 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.21.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.22.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.22', date: '2026-09-22', items: [
+            'New: a music player on the Sound page. The game plays its soundtrack straight through one fixed list, and Next is the only way along it. This one lays the whole soundtrack out by album and lets you pick the track you want.',
+            'Shuffle plays everything once before anything comes round a second time, and every track has a tick: take it off and it stays out of the rotation. Album headers tick their whole album on or off, and the search box finds a track by title or album.',
+            'The music is streamed instead of downloaded. The game fetches each track whole before the first note, and those files are 12 to 69 MB - so a track now starts in a moment, the bar under it can be dragged anywhere in the track, and skipping costs next to nothing.',
+            'Where you stopped is remembered. The same track comes back at the same place and waits there until you press Play - nothing ever starts by itself.',
+            'The game\'s own music goes quiet whenever the player starts, so the two never play over each other. Switch the player off and the game\'s music controls are back where they were.',
+        ] },
         { v: '6.21.2', date: '2026-09-21', items: [
             'The "View Achievements" link in the game\'s achievement pop-up now opens the Achievements window instead of loading the page over the whole tab. Any other link the game uses to one of the overlay pages is caught the same way.',
             'Clicking that link also closes the pop-up it came from, the same way its own button does, so the next one in line can show up.',
@@ -9908,6 +9985,11 @@
                 'Typing !tomato and a name opens a list of players to choose from; it only shows while there is something to choose.',
                 'Enhanced chat (opt-in) groups messages by sender and hides the system lines you pick.',
             ] },
+            { title: 'Music', items: [
+                'Settings › Sound: the music player lays the game’s whole soundtrack out by album. Click a track to hear that one, take its tick off to keep it out of the rotation, or tick a whole album on or off at its heading.',
+                'Shuffle plays everything once before anything comes round again. The bar under the buttons goes anywhere in a track, and where you stopped is where it starts next time — nothing ever begins by itself.',
+                'While the player is on, the game plays no music of its own. Switch it off and the game’s own music controls are back where they were.',
+            ] },
             { title: 'Themes', items: [
                 `Settings › Theme: ${THEMES.length} themes in ${new Set(THEMES.map(t => t.group)).size} groups. Random picks a new one on every load, and every few minutes if you like.`,
                 'Custom: choose hue, accent and intensity, a gradient and a pattern.',
@@ -10122,7 +10204,12 @@
         if (section.render === 'sound') {
             const s = soundState();
             if (!s) return { text: 'Not loaded yet', none: true };
-            return { text: `Effects ${s.sfx ? 'on' : 'off'} · Music ${s.music ? 'on' : 'off'}`, none: !s.sfx && !s.music };
+            const chosen = musicFind(music.id);
+            const musicText = settings.musicPlayer
+                ? (musicIsPlaying() && chosen ? 'Playing: ' + chosen.title : 'Player on')
+                : `Music ${s.music ? 'on' : 'off'}`;
+            return { text: `Effects ${s.sfx ? 'on' : 'off'} \u00b7 ${musicText}`,
+                     none: !s.sfx && !s.music && !settings.musicPlayer };
         }
         const items = sectionItems(section);
         const on = items.filter(i => settings[i.key] && (!i.needs || settings[i.needs])).length;
@@ -10132,7 +10219,8 @@
     function sectionKeys(section) {
         if (section.render === 'theme') return ['themeId', 'themeHue', 'themeTint', 'themeAccent', 'themeGradient', 'themePattern', 'themeRandom', 'themeRotate', 'themeFx', 'boardClear'];
         if (section.render === 'performance') return ['perfLevel', 'perfFpsMeter', ...PERF_LEVERS.map(l => l.key)];
-        if (section.render === 'sound') return [];   // the game keeps these, not this script (section 11c)
+        // The game keeps its own sound (11c); only the player's own settings are ours (11e).
+        if (section.render === 'sound') return ['musicPlayer', 'musicShuffle', 'musicVolume'];
         const keys = [];
         for (const item of sectionItems(section)) { keys.push(item.key); for (const sub of itemSubs(item)) keys.push(sub.key); }
         if (section.throne) keys.push('throneDrinkSet');
@@ -10201,7 +10289,12 @@
             }
         }
         box.appendChild(settingsFoot('Reset this page', () => {
-            if (section.render === 'sound') soundOff();   // the default there: both off
+            if (section.render === 'sound') {
+                soundOff();                      // the default there: both off
+                musicPause();
+                settings.musicExcluded = [];     // a new array, never the one behind the defaults
+                music.queue = [];
+            }
             for (const k of sectionKeys(section)) settings[k] = settingDefaults[k];
         }, body));
     }
@@ -10330,21 +10423,26 @@
         card.appendChild(soundItem('Sound effects', 'Marbles, bumpers, the crown: every sound of the board.', s.sfx,
             on => { if (on !== soundState().sfx) soundClick('sound-mute-toggle'); redraw(); },
             s.sfxVol, v => soundSlide('sound-volume-range', v), redraw));
-        const music = soundItem('Music', 'The game\'s background music.', s.music,
-            on => { if (on !== soundState().music) soundClick('music-enabled-toggle'); redraw(); },
-            s.musicVol, v => soundSlide('music-volume-range', v), redraw);
-        const track = document.createElement('div');
-        track.className = 'mcfo-set__sub';
-        track.toggleAttribute('data-off', !s.music);
-        track.innerHTML = '<span class="mcfo-set__sublabel">Track</span><span class="mcfo-sound__track"></span>'
-                        + '<button type="button" class="mcfo-set__reset">Next</button>';
-        track.querySelector('.mcfo-sound__track').textContent = s.track || 'No track';
-        const next = track.querySelector('button');
-        next.disabled = !s.nextOk;
-        // The game loads the next track before it names it: redrawn a moment later.
-        next.addEventListener('click', () => { soundClick('music-next-track'); setTimeout(redraw, 600); });
-        music.appendChild(track);
-        card.appendChild(music);
+        // Our own player (11e), and under it the game's music the way it always was - but only
+        // while the player is off, so there are never two sets of music controls at once.
+        card.appendChild(musicItem(redraw));
+        if (!settings.musicPlayer) {
+            const gameMusic = soundItem('The game\'s music', 'Its own soundtrack, played straight through its own list.', s.music,
+                on => { if (on !== soundState().music) soundClick('music-enabled-toggle'); redraw(); },
+                s.musicVol, v => soundSlide('music-volume-range', v), redraw);
+            const track = document.createElement('div');
+            track.className = 'mcfo-set__sub';
+            track.toggleAttribute('data-off', !s.music);
+            track.innerHTML = '<span class="mcfo-set__sublabel">Track</span><span class="mcfo-sound__track"></span>'
+                            + '<button type="button" class="mcfo-set__reset">Next</button>';
+            track.querySelector('.mcfo-sound__track').textContent = s.track || 'No track';
+            const next = track.querySelector('button');
+            next.disabled = !s.nextOk;
+            // The game loads the next track before it names it: redrawn a moment later.
+            next.addEventListener('click', () => { soundClick('music-next-track'); setTimeout(redraw, 600); });
+            gameMusic.appendChild(track);
+            card.appendChild(gameMusic);
+        }
         if (s.locked) {
             const note = document.createElement('div');
             note.className = 'mcfo-set__notice';
@@ -10909,6 +11007,541 @@
             row.appendChild(seg);
         }
         return row;
+    }
+
+    // =========================================================================================
+    // 11e. MUSIC PLAYER: THE GAME'S SOUNDTRACK, OURS TO PICK FROM (6.22)
+    // =========================================================================================
+    // The game reads its playlist from /.mcf-soundtrack/manifest.json and walks it strictly in
+    // order: Next is index + 1, and that is the whole of it. Worse, its player downloads every
+    // file whole and decodes it before the first note (prodViewer/sound/soundRuntime.js, one
+    // decodeAudioData over the complete buffer) - and the files are raw WAV, 12 to 69 MB each. So
+    // clicking your way to a track you want costs hundreds of megabytes.
+    // This player reads the same manifest and hands the files to an <audio> element instead, which
+    // streams them: metadata after about a second, seeking by range request, a few seconds held
+    // ahead instead of the whole file. That makes picking a track, shuffling and leaving tracks
+    // out cheap. Whenever it starts, the game's own music is switched off with the game's own
+    // button - two players would be two songs at once, and section 11c reads that state back.
+    const MUSIC_MANIFEST_URL = '/.mcf-soundtrack/manifest.json';
+    const MUSIC_LAST_KEY = 'mcfo_music_last';   // track and position, to pick up where it stopped
+    const MUSIC_SAVE_EVERY_MS = 10000;
+    const MUSIC_MAX_FAILS = 3;                  // a run of unplayable tracks stops the hunt
+
+    const music = {
+        tracks: null,     // [{ id, album, title, src }] once the manifest has been read
+        loading: null,    // the promise while it is on its way
+        note: '',         // what went wrong, shown under the player
+        fails: 0,         // tracks that would not play, in a row
+        fault: '',        // the name of the last refusal, for when something needs looking at
+        el: null,         // the <audio>, built on the first play
+        id: '',           // the chosen track, also before anything is loaded
+        srcId: '',        // the track actually loaded into the element
+        seekTo: 0,        // where to start once the metadata is in
+        queue: [],        // the shuffled order, rebuilt when the rotation changes
+        filter: '',       // the search box, kept while the window stays open
+        open: new Set(),  // the albums folded open
+        savedAt: 0,
+        sync: null,       // light refresh of the open page (bar, buttons, marker)
+        redraw: null,     // full rebuild of the open page (list, counts)
+    };
+
+    const musicFind = id => (music.tracks || []).find(t => t.id === id) || null;
+    const musicIsPlaying = () => !!music.el && !music.el.paused && !music.el.ended && music.srcId === music.id;
+    const musicOut = id => settings.musicExcluded.indexOf(id) >= 0;
+    function musicTime(sec) {
+        const s = Math.max(0, Math.floor(Number(sec) || 0));
+        return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+
+    // The manifest gives a path and a name per track; the album is the folder it sits in. The
+    // paths come with spaces and commas in them and are handed on as they are: the URL parser
+    // encodes what needs encoding, while encodeURI would take the percent of a path that is
+    // already encoded and make %2520 out of %20. Only the two characters that would cut a URL
+    // short - the hash and the question mark - are spelled out.
+    function musicParse(raw) {
+        const path = String((raw && (raw.path || raw.src || raw.url)) || '').trim();
+        if (!path) return null;
+        const parts = path.split('/').filter(Boolean).map(p => { try { return decodeURIComponent(p); } catch (e) { return p; } });
+        const file = parts[parts.length - 1] || '';
+        return {
+            id: path,
+            album: parts.length > 1 ? parts[parts.length - 2] : 'Soundtrack',
+            title: String((raw && (raw.name || raw.title)) || '').trim() || file.replace(/\.[^.]*$/, ''),
+            src: path.replace(/#/g, '%23').replace(/\?/g, '%3F'),
+        };
+    }
+
+    // Only ever fetched when the Sound page is opened, never on a normal page load.
+    function musicLoad() {
+        if (music.tracks) return Promise.resolve(music.tracks);
+        if (!music.loading) music.loading = (async () => {
+            let list = [];
+            try {
+                const res = await fetch(MUSIC_MANIFEST_URL, { cache: 'no-store' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                list = (Array.isArray(data && data.tracks) ? data.tracks : []).map(musicParse).filter(Boolean);
+                music.note = list.length ? '' : 'The game\'s soundtrack list came back empty.';
+            } catch (e) {
+                music.note = 'The soundtrack list could not be read. Reload the page and try again.';
+            }
+            music.tracks = list;
+            music.loading = null;
+            musicRestore();
+            if (music.redraw) music.redraw();
+            return list;
+        })();
+        return music.loading;
+    }
+
+    // Where it stopped last time, so the page comes back to the same track at the same place.
+    // Nothing starts by itself: the position is only handed over on the next press of Play.
+    function musicRestore() {
+        if (music.id) return;
+        let last = null;
+        try { last = JSON.parse(localStorage.getItem(MUSIC_LAST_KEY) || 'null'); } catch (e) {}
+        if (!last || !musicFind(last.id)) return;
+        music.id = String(last.id);
+        music.seekTo = Math.max(0, Number(last.pos) || 0);
+    }
+    function musicRemember() {
+        if (!music.id) return;
+        const pos = music.el && music.srcId === music.id ? music.el.currentTime : music.seekTo;
+        try { localStorage.setItem(MUSIC_LAST_KEY, JSON.stringify({ id: music.id, pos: Math.max(0, Math.floor(pos || 0)) })); } catch (e) {}
+        music.savedAt = Date.now();
+    }
+
+    // The rotation is everything still ticked on the list. In order that is the manifest's order;
+    // shuffled it is one pass through a shuffled copy, so nothing comes round twice while other
+    // tracks have not played at all.
+    function musicRotation() {
+        const out = new Set(settings.musicExcluded);
+        return (music.tracks || []).filter(t => !out.has(t.id));
+    }
+    function musicOrder() {
+        const ids = musicRotation().map(t => t.id);
+        if (!settings.musicShuffle) return ids;
+        const have = new Set(ids);
+        const fits = music.queue.length === ids.length && music.queue.every(id => have.has(id));
+        if (!fits) music.queue = musicShuffled(ids, music.id);
+        return music.queue;
+    }
+    // Fisher-Yates. Whatever plays right now keeps the front, so a reshuffle never cuts it off.
+    function musicShuffled(ids, keep) {
+        const a = ids.slice();
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const t = a[i]; a[i] = a[j]; a[j] = t;
+        }
+        const at = a.indexOf(keep);
+        if (at > 0) { a.splice(at, 1); a.unshift(keep); }
+        return a;
+    }
+
+    // Taking a track out or putting it back never pushes into the list: settingDefaults holds an
+    // array of its own, and a shared one would fill up through Reset all.
+    function musicSetOut(ids, out) {
+        const set = new Set(settings.musicExcluded);
+        for (const id of ids) { if (out) set.add(id); else set.delete(id); }
+        settings.musicExcluded = [...set];
+        music.queue = [];
+        saveSettings();
+        // Taking off the track that is playing right now means it should stop being heard, not
+        // play to its end: it moves on, or falls silent when nothing is left to play.
+        if (out && musicIsPlaying() && musicOut(music.id)) {
+            if (musicRotation().length) musicSkip(1); else musicPause();
+        }
+    }
+
+    function musicElement() {
+        // Back into the page if something took it out: a player removed from the document is
+        // paused by the browser on the spot.
+        if (music.el) {
+            if (!music.el.isConnected) (document.body || document.documentElement).appendChild(music.el);
+            return music.el;
+        }
+        const el = new Audio();
+        el.preload = 'none';
+        el.className = 'mcfo-audio';
+        el.hidden = true;
+        el.volume = Math.max(0, Math.min(1, settings.musicVolume / 100));
+        // In the page rather than off to the side: that way the browser treats it as a proper
+        // player - media keys and the browser's own sound indicator find it - and it can be
+        // looked at when something goes wrong.
+        (document.body || document.documentElement).appendChild(el);
+        el.addEventListener('loadedmetadata', () => {
+            if (music.seekTo > 0 && music.seekTo < el.duration - 1) el.currentTime = music.seekTo;
+            music.seekTo = 0;
+            if (music.sync) music.sync();
+        });
+        el.addEventListener('timeupdate', () => {
+            if (Date.now() - music.savedAt > MUSIC_SAVE_EVERY_MS) musicRemember();
+            if (music.sync) music.sync();
+        });
+        el.addEventListener('playing', () => { music.fails = 0; if (music.sync) music.sync(); });
+        el.addEventListener('pause', () => { musicRemember(); if (music.sync) music.sync(); });
+        el.addEventListener('ended', () => { music.seekTo = 0; musicSkip(1); });
+        // A file that will not play is skipped, but a run of them stops rather than racing through
+        // the whole soundtrack.
+        el.addEventListener('error', () => {
+            const t = musicFind(music.id);
+            music.fails++;
+            if (music.fails >= MUSIC_MAX_FAILS || musicRotation().length < 2) {
+                music.note = 'That track would not play' + (t ? ': ' + t.title : '') + '.';
+                if (music.redraw) music.redraw();
+                return;
+            }
+            music.note = 'Skipped a track the browser would not play.';
+            musicSkip(1);
+        });
+        music.el = el;
+        return el;
+    }
+
+    // Starting anything silences the game's own music first, with the game's own button.
+    function musicPlay(id) {
+        const track = musicFind(id);
+        if (!track) return;
+        const s = soundState();
+        if (s && s.music) soundClick('music-enabled-toggle');
+        const el = musicElement();
+        if (music.srcId !== track.id) {
+            music.id = track.id;
+            music.srcId = track.id;
+            music.note = '';
+            el.src = track.src;
+            el.load();
+        }
+        el.play().catch(e => {
+            music.fault = (e && e.name) || 'unknown';
+            music.note = 'The browser would not start the sound. Click the page once, then press Play again.';
+            if (music.redraw) music.redraw();
+        });
+        musicRemember();
+        if (music.sync) music.sync();
+    }
+    function musicPause() { if (music.el) music.el.pause(); }
+    function musicToggle() {
+        if (musicIsPlaying()) { musicPause(); return; }
+        const id = musicFind(music.id) ? music.id : musicOrder()[0];
+        if (id) musicPlay(id);
+    }
+    function musicSkip(dir) {
+        const order = musicOrder();
+        if (!order.length) return;
+        // Back in the first seconds means the track before; later in it means this one again.
+        if (dir < 0 && music.el && music.srcId === music.id && music.el.currentTime > 3) {
+            music.el.currentTime = 0;
+            return;
+        }
+        const at = order.indexOf(music.id);
+        let next;
+        if (at < 0) next = order[dir > 0 ? 0 : order.length - 1];
+        else if (settings.musicShuffle && at + dir >= order.length) {
+            music.queue = musicShuffled(order);
+            next = music.queue[0];
+        } else next = order[(at + dir + order.length) % order.length];
+        music.seekTo = 0;
+        musicPlay(next);
+    }
+
+    const MUSIC_ICONS = {
+        play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+        pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zm6.5 0H17v14h-3.5z"/></svg>',
+        prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6h2.2v12H7zm11 0v12l-8-6z"/></svg>',
+        next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.8 6H17v12h-2.2zM6 6l8 6-8 6z"/></svg>',
+        shuffle: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 4 21 7.6l-4.5 3.6V8.9h-1.8l-2 2.7-1.4-1.9L13.8 6h2.7zm0 8.8L21 16.4 16.5 20v-2.3h-2.7l-2.5-3.3 1.4-1.9 2 2.7h1.8zM3 6h4.4l2.5 3.3-1.4 1.9-2-2.7H3zm0 9.7h3.5l4.9-6.6 1.4 1.9-5.4 7.3H3z"/></svg>',
+    };
+
+    // The player on the Sound page. It keeps no copy of anything: every control reads the state
+    // above and writes it straight back. sync() is the cheap refresh that runs four times a second
+    // while a track plays, so it touches the bar, the buttons and the one marked row - never the
+    // whole list. Ticking tracks on and off rebuilds nothing either, or the list would jump back
+    // to the top under the hand that ticked it.
+    function musicPlayerUi(redrawPage) {
+        const box = document.createElement('div');
+        box.className = 'mcfo-mus';
+        music.sync = null;                       // the nodes of the last drawing are gone
+        music.redraw = () => redrawPage();
+
+        if (!music.tracks) {
+            void musicLoad();
+            const wait = document.createElement('div');
+            wait.className = 'mcfo-mus__note';
+            wait.textContent = 'Reading the game\'s soundtrack list...';
+            box.appendChild(wait);
+            return box;
+        }
+        if (!music.tracks.length) {
+            const bad = document.createElement('div');
+            bad.className = 'mcfo-set__notice';
+            bad.textContent = music.note || 'The game\'s soundtrack list is empty.';
+            box.appendChild(bad);
+            return box;
+        }
+
+        // Now playing.
+        const now = document.createElement('div');
+        now.className = 'mcfo-mus__now';
+        now.innerHTML = '<span class="mcfo-mus__title"></span><span class="mcfo-mus__albumline"></span>';
+        const nowTitle = now.querySelector('.mcfo-mus__title');
+        const nowAlbum = now.querySelector('.mcfo-mus__albumline');
+
+        // Transport.
+        const bar = document.createElement('div');
+        bar.className = 'mcfo-mus__row';
+        const button = (label, icon, extra) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'mcfo-mus__btn' + (extra || '');
+            b.innerHTML = icon;
+            b.title = label;
+            b.setAttribute('aria-label', label);
+            return b;
+        };
+        const bPrev = button('Previous track', MUSIC_ICONS.prev);
+        const bPlay = button('Play', MUSIC_ICONS.play, ' mcfo-mus__btn--play');
+        const bNext = button('Next track', MUSIC_ICONS.next);
+        const bShuffle = button('Shuffle', MUSIC_ICONS.shuffle);
+        bShuffle.setAttribute('aria-pressed', settings.musicShuffle ? 'true' : 'false');
+        bPrev.addEventListener('click', () => musicSkip(-1));
+        bNext.addEventListener('click', () => musicSkip(1));
+        bPlay.addEventListener('click', musicToggle);
+        bShuffle.addEventListener('click', () => {
+            settings.musicShuffle = !settings.musicShuffle;
+            music.queue = [];
+            saveSettings();
+            bShuffle.setAttribute('aria-pressed', settings.musicShuffle ? 'true' : 'false');
+        });
+        const count = document.createElement('span');
+        count.className = 'mcfo-mus__count';
+        bar.append(bPrev, bPlay, bNext, bShuffle, count);
+
+        // Position. The slider runs in seconds, so it is right whatever the track is long.
+        const line = document.createElement('div');
+        line.className = 'mcfo-mus__row';
+        line.innerHTML = '<span class="mcfo-mus__time"></span>'
+                       + '<input type="range" class="mcfo-mus__seek" min="0" max="1" step="1" value="0" aria-label="Position in the track">'
+                       + '<span class="mcfo-mus__time"></span>';
+        const seek = line.querySelector('.mcfo-mus__seek');
+        const atText = line.children[0], ofText = line.children[2];
+        let seeking = false;
+        seek.addEventListener('pointerdown', () => { seeking = true; });
+        seek.addEventListener('input', () => { seeking = true; atText.textContent = musicTime(seek.value); });
+        seek.addEventListener('change', () => {
+            seeking = false;
+            if (music.el && music.srcId === music.id && music.el.duration) music.el.currentTime = Number(seek.value);
+            else music.seekTo = Number(seek.value);
+            musicRemember();
+        });
+
+        // Volume. Its own row rather than mcfo-set__sub, which brings the card's padding with it.
+        const vol = document.createElement('div');
+        vol.className = 'mcfo-mus__row';
+        vol.innerHTML = '<span class="mcfo-set__sublabel">Volume</span>'
+                      + '<input type="range" class="mcfo-set__range" min="0" max="100" step="1">'
+                      + '<span class="mcfo-set__val"></span>';
+        const volRange = vol.querySelector('input');
+        const volVal = vol.querySelector('.mcfo-set__val');
+        volRange.value = String(settings.musicVolume);
+        volVal.textContent = settings.musicVolume + '%';
+        volRange.addEventListener('input', () => {
+            settings.musicVolume = Math.max(0, Math.min(100, Number(volRange.value) || 0));
+            volVal.textContent = settings.musicVolume + '%';
+            if (music.el) music.el.volume = settings.musicVolume / 100;
+            saveSettings();
+        });
+
+        // Search and the two big switches over the whole soundtrack.
+        const tools = document.createElement('div');
+        tools.className = 'mcfo-mus__row';
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.className = 'mcfo-mus__search';
+        search.placeholder = 'Search title or album';
+        search.value = music.filter;
+        search.addEventListener('input', () => { music.filter = search.value; buildList(); });
+        const allOn = document.createElement('button');
+        allOn.type = 'button';
+        allOn.className = 'mcfo-set__reset';
+        allOn.textContent = 'All on';
+        allOn.addEventListener('click', () => { musicSetOut(music.tracks.map(t => t.id), false); buildList(); });
+        const allOff = document.createElement('button');
+        allOff.type = 'button';
+        allOff.className = 'mcfo-set__reset';
+        allOff.textContent = 'All off';
+        allOff.addEventListener('click', () => { musicSetOut(music.tracks.map(t => t.id), true); buildList(); });
+        tools.append(search, allOn, allOff);
+
+        const list = document.createElement('div');
+        list.className = 'mcfo-mus__list';
+        const note = document.createElement('div');
+        note.className = 'mcfo-mus__note';
+
+        // The list, by album. Albums are folded shut; the one being played, and everything a
+        // search matches, is open.
+        let albums = [];
+        let marked = null;
+        function buildList() {
+            list.textContent = '';
+            marked = null;
+            albums = [];
+            const q = music.filter.trim().toLowerCase();
+            const byAlbum = new Map();
+            for (const t of music.tracks) {
+                if (!byAlbum.has(t.album)) byAlbum.set(t.album, []);
+                byAlbum.get(t.album).push(t);
+            }
+            for (const [name, tracks] of byAlbum) {
+                const shown = q ? tracks.filter(t => (t.title + ' ' + name).toLowerCase().includes(q)) : tracks;
+                if (!shown.length) continue;
+                const album = { name, tracks, scope: q ? shown : tracks, rows: [], head: null, num: null, tick: null };
+                const head = document.createElement('div');
+                head.className = 'mcfo-mus__head';
+                const fold = document.createElement('button');
+                fold.type = 'button';
+                fold.className = 'mcfo-mus__fold';
+                fold.textContent = name;
+                const num = document.createElement('span');
+                num.className = 'mcfo-mus__num';
+                const tick = document.createElement('input');
+                tick.type = 'checkbox';
+                tick.className = 'mcfo-mus__tick';
+                tick.title = 'Play tracks from this album';
+                head.append(fold, num, tick);
+                const songs = document.createElement('div');
+                songs.className = 'mcfo-mus__songs';
+                const open = !!q || music.open.has(name) || shown.some(t => t.id === music.id);
+                if (open) music.open.add(name);
+                songs.hidden = !open;
+                head.toggleAttribute('data-open', open);
+                fold.addEventListener('click', () => {
+                    const nowOpen = songs.hidden;
+                    songs.hidden = !nowOpen;
+                    head.toggleAttribute('data-open', nowOpen);
+                    if (nowOpen) music.open.add(name); else music.open.delete(name);
+                });
+                tick.addEventListener('change', () => {
+                    musicSetOut(album.scope.map(t => t.id), !tick.checked);
+                    for (const row of album.rows) row.tick.checked = !musicOut(row.track.id);
+                    counts();
+                });
+                for (const t of shown) {
+                    const row = document.createElement('div');
+                    row.className = 'mcfo-mus__song';
+                    row.dataset.id = t.id;
+                    const play = document.createElement('button');
+                    play.type = 'button';
+                    play.className = 'mcfo-mus__songname';
+                    play.textContent = t.title;
+                    play.title = 'Play ' + t.title;
+                    const rowTick = document.createElement('input');
+                    rowTick.type = 'checkbox';
+                    rowTick.className = 'mcfo-mus__tick';
+                    rowTick.checked = !musicOut(t.id);
+                    rowTick.title = 'Play this track';
+                    // Picking a track that was taken out puts it back: the ticks are the rotation,
+                    // and a track playing while ticked off would be a lie about the next one.
+                    play.addEventListener('click', () => {
+                        if (musicOut(t.id)) { musicSetOut([t.id], false); rowTick.checked = true; counts(); }
+                        musicPlay(t.id);
+                    });
+                    rowTick.addEventListener('change', () => { musicSetOut([t.id], !rowTick.checked); counts(); });
+                    row.append(play, rowTick);
+                    songs.appendChild(row);
+                    album.rows.push({ track: t, tick: rowTick });
+                }
+                album.head = head; album.num = num; album.tick = tick;
+                list.append(head, songs);
+                albums.push(album);
+            }
+            if (!albums.length) {
+                const none = document.createElement('div');
+                none.className = 'mcfo-mus__note';
+                none.textContent = 'Nothing matches "' + music.filter.trim() + '".';
+                list.appendChild(none);
+            }
+            counts();
+            sync();
+        }
+
+        // Every counter that can change without the list being rebuilt.
+        function counts() {
+            for (const album of albums) {
+                const on = album.tracks.filter(t => !musicOut(t.id)).length;
+                album.num.textContent = on + '/' + album.tracks.length;
+                album.tick.checked = on > 0;
+                album.tick.indeterminate = on > 0 && on < album.tracks.length;
+            }
+            const rotation = musicRotation().length;
+            count.textContent = rotation + ' of ' + music.tracks.length + ' tracks';
+            const empty = rotation === 0;
+            bPrev.disabled = bNext.disabled = empty;
+            bPlay.disabled = empty && !musicIsPlaying();
+        }
+
+        function sync() {
+            const track = musicFind(music.id);
+            nowTitle.textContent = track ? track.title : 'Nothing chosen yet';
+            nowAlbum.textContent = track ? track.album : '';
+            const playing = musicIsPlaying();
+            bPlay.innerHTML = playing ? MUSIC_ICONS.pause : MUSIC_ICONS.play;
+            bPlay.title = playing ? 'Pause' : 'Play';
+            bPlay.setAttribute('aria-label', bPlay.title);
+            const loaded = music.el && music.srcId === music.id;
+            const duration = loaded && Number.isFinite(music.el.duration) ? music.el.duration : 0;
+            const at = loaded ? music.el.currentTime : music.seekTo;
+            seek.disabled = !duration;
+            if (!seeking) {
+                seek.max = String(Math.max(1, Math.floor(duration || 1)));
+                seek.value = String(Math.min(Math.floor(at), Math.floor(duration || 0)));
+            }
+            atText.textContent = musicTime(at);
+            ofText.textContent = duration ? musicTime(duration) : '--:--';
+            if (marked && marked.dataset.id !== music.id) { marked.removeAttribute('data-current'); marked = null; }
+            if (!marked && music.id) {
+                marked = list.querySelector('.mcfo-mus__song[data-id="' + CSS.escape(music.id) + '"]');
+                if (marked) marked.setAttribute('data-current', '');
+            }
+            if (marked) marked.toggleAttribute('data-playing', playing);
+            note.textContent = music.note;
+            note.hidden = !music.note;
+        }
+
+        box.append(now, bar, line, vol, tools, list, note);
+        buildList();
+        music.sync = sync;
+        return box;
+    }
+
+    // The switch for the player on the Sound page, drawn like any setting row, with the player
+    // itself under it. Switching it on hushes the game's music; switching it off stops ours and
+    // hands the game's own controls back (section 11c).
+    function musicItem(redraw) {
+        const wrap = document.createElement('div');
+        wrap.className = 'mcfo-set__item';
+        const row = document.createElement('label');
+        row.className = 'mcfo-set__row';
+        row.innerHTML = '<span class="mcfo-set__text"><span class="mcfo-set__label"></span>'
+                      + '<span class="mcfo-set__hint"></span></span>'
+                      + '<input type="checkbox" class="mcfo-switch__input">'
+                      + '<span class="mcfo-switch" aria-hidden="true"></span>';
+        row.querySelector('.mcfo-set__label').textContent = 'Music player';
+        row.querySelector('.mcfo-set__hint').textContent = 'The whole soundtrack by album: pick a track, '
+            + 'shuffle it, and take off the ones you would rather not hear. It streams, so a track starts at '
+            + 'once instead of after the whole file. While it is on, the game plays no music of its own.';
+        const input = row.querySelector('input');
+        input.checked = settings.musicPlayer;
+        input.addEventListener('change', () => {
+            settings.musicPlayer = input.checked;
+            saveSettings();
+            if (!settings.musicPlayer) musicPause();
+            else { const s = soundState(); if (s && s.music) soundClick('music-enabled-toggle'); }
+            redraw();
+        });
+        wrap.appendChild(row);
+        if (settings.musicPlayer) wrap.appendChild(musicPlayerUi(redraw));
+        return wrap;
     }
 
     // =========================================================================================
