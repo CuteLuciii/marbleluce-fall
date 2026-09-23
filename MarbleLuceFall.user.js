@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.23
+// @version      6.23.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -784,6 +784,18 @@
     // Kept as a string: a colour theme (section 3b) runs this very text through its colour
     // mapping and lays the result over it.
     const BASE_CSS = `
+        /* === THE GAME'S ARENA HELP (arenaHelp.js, game v0.10.0f) ===
+           The game now puts help texts on the header cards (hover or focus opens a tooltip),
+           an "Arena help" button into the footer, a "?" beside the bid buttons for new players
+           and a "Currency & arena guide" into the sound controls. Regular players do not need any
+           of it, so all of it stays hidden. The cards themselves are untouched: the game wrapped
+           label and value in a .arenaHelpMetric button, which keeps showing, just without the
+           help cursor. */
+        .arenaHelpTooltip,
+        .arenaHelpGuide,
+        .arenaHelpButton { display: none !important; }
+        .arenaHelpMetric { cursor: inherit !important; }
+
         /* === KING TILE: NAME AND GOLD LEFT, TOLL RIGHT ===
            Deliberately without backdrop-filter. It forced the whole stack underneath onto its
            own texture, which is not rasterised at the resolution of the board — the king tile
@@ -9814,12 +9826,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.23';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.23.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.23.1', date: '2026-09-23', items: ['The game\'s new arena help is hidden: no more tooltips on the Tickets, Points, Gold and Diamonds cards, no "Arena help" button in the footer, no "?" beside the bid buttons and no currency guide in the sound controls.'] },
         { v: '6.23', date: '2026-09-22', items: [
             'New: a player bar you can put anywhere on the page. Skipping or pausing a track no longer means going through the settings - the bar sits where you drag it, remembers the spot, and is still there after a reload.',
             'It shows what is playing and from which album, has previous, play, next, shuffle and volume, and a line at the bottom for how far the track has got and how much of it is loaded. Clicking that line jumps to another place in the track.',
