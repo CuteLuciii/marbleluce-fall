@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.26.4
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
+// @version      6.27
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -326,6 +326,16 @@
                 { key: 'chatTextSize', type: 'range', label: 'Messages', min: 80, max: 180, step: 5, def: 100, unit: '%' },
               ] },
         ]}},
+        { title: 'Shop and dailies', blurb: 'Quest hints and euro prices in the shop, your daily rewards in one click.', items: [
+            { key: 'shopQuestAlarm', label: 'Quest alarm',
+              hint: 'An offer that would complete one of today\'s open shop quests gets a gold Quest tag in the shop, and the Shop button a gold dot while such an offer is in the rotation. Nothing is bought.' },
+            { key: 'shopEuro', label: 'Diamond prices in euros',
+              hint: 'Beside every diamond price in the shop, what those diamonds cost: from the cheapest to the dearest diamond pack, at today\'s exchange rate.' },
+            { key: 'dailyClaimAll', label: 'Claim all dailies',
+              hint: 'A gold dot on your account card while a quest reward or a daily item is waiting, and "Claim all dailies" at the top of its menu — one click claims everything that is ready.' },
+            { key: 'dailyAutoClaim', def: false, label: 'Claim dailies by themselves',
+              hint: 'Opt-in. Finished quests and the free daily items are claimed as soon as they are ready, also right after the daily reset, with a short notice of what came in. You miss the reveal on the Dailies page that way.' },
+        ]},
         { title: 'Footer', blurb: 'Season line, build, and which buttons stay.', items: [
             { key: 'footerMeta', label: 'Season, episode and build',
               hint: 'Bottom left instead of on the tileset card, plus the game build.' },
@@ -1387,6 +1397,38 @@
         .mcfo-menu button.mcfo-menu__update { color: #ff6b6b; font-weight: 700; }
         .mcfo-menu button.mcfo-menu__update:hover { background: rgba(255, 59, 59, 0.14); }
 
+        /* === DAILIES AND SHOP DOTS, NOTICES (6.27, section 12d) ===
+           Gold, where the red update dot is red. Both up at once: gold moves left and sits beside
+           the red one instead of under it. */
+        .mcfo-dailydot, .mcfo-shopdot {
+            position: absolute; top: -4px; right: -4px; z-index: 5;
+            width: 11px; height: 11px; border-radius: 50%;
+            background: #f2c14e; box-shadow: 0 0 0 2px #0b121a;
+            pointer-events: none;
+        }
+        .mcfo-dailydot[hidden], .mcfo-shopdot[hidden] { display: none; }
+        html[data-mcfo-update] .mcfo-dailydot { right: 11px; }
+        [data-role="shop-nav"], [data-metric-role="gold"] > .mcfo-signpost { position: relative; }
+        .mcfo-menu button.mcfo-menu__daily { color: #f2c14e; font-weight: 700; }
+        .mcfo-menu button.mcfo-menu__daily:hover { background: rgba(242, 193, 78, 0.14); }
+        .mcfo-notices {
+            position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 10045;
+            display: grid; gap: 6px; width: min(560px, calc(100vw - 32px)); pointer-events: none;
+        }
+        .mcfo-notice {
+            pointer-events: auto; display: flex; align-items: center; gap: 10px;
+            padding: 9px 8px 9px 13px; border: 1px solid #6b5a2a; border-left: 3px solid #f2c14e; border-radius: 8px;
+            background: rgba(19, 24, 30, 0.96); color: #eef3f7; font-size: 13px; line-height: 1.4;
+            box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+        }
+        .mcfo-notice--error { border-color: #6f3a3a; border-left-color: #e05a47; }
+        .mcfo-notice__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .mcfo-notice .mcfo-notice__x {
+            flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px;
+            background: transparent; color: inherit; font-size: 17px; line-height: 1; cursor: pointer; opacity: 0.7;
+        }
+        .mcfo-notice .mcfo-notice__x:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+
         /* === TILESET BANNER (6.24) ===
            The game announces a new tileset with a picture over a nearly black curtain across the
            whole board. With the option on, curtain and picture go, and a line of text takes their
@@ -2113,7 +2155,14 @@
         .mcfo-theme .mcfo-theme__shuffle:hover { border-color: #4d7ea6; }
 
         /* === HOW TO, CHANGELOG, WHAT'S NEW (section 11b) === */
-        .mcfo-doc { position: absolute; inset: 0; overflow: auto; padding: 14px 18px 18px; color: #d7e2ea; font-size: 13px; line-height: 1.45; }
+        /* Two parts since 6.27: the text scrolls, the foot (tick, Got it, the other windows) stays put
+           at the bottom — in a long What's new it used to scroll away with the text. */
+        .mcfo-doc { position: absolute; inset: 0; display: flex; flex-direction: column; color: #d7e2ea; font-size: 13px; line-height: 1.45; }
+        .mcfo-doc__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 14px 18px 14px; }
+        .mcfo-doc a.mcfo-doc__link { color: #8cc8ff; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+        .mcfo-doc a.mcfo-doc__link:hover { color: #b9deff; }
+        .mcfo-set__item--found { box-shadow: 0 0 0 2px #4d7ea6; border-radius: 9px; transition: box-shadow 1.2s ease 1.4s; }
+        .mcfo-set__item--found.mcfo-set__item--fade { box-shadow: 0 0 0 2px transparent; }
         .mcfo-doc h3 { margin: 16px 0 6px; font-size: 11.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #8da2b7; }
         .mcfo-doc h3:first-child { margin-top: 0; }
         .mcfo-doc ul { margin: 0; padding-left: 18px; display: grid; gap: 5px; }
@@ -2122,7 +2171,7 @@
         .mcfo-doc__ver:first-child, .mcfo-doc__intro + .mcfo-doc__ver { margin-top: 0; }
         .mcfo-doc__vnum { font-weight: 800; font-size: 14px; color: #e6f0f7; }
         .mcfo-doc__date { font-size: 11.5px; color: #8da2b7; }
-        .mcfo-doc__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 1px solid #1c2c3a; }
+        .mcfo-doc__foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; padding: 12px 18px 14px; border-top: 1px solid #1c2c3a; }
         .mcfo-doc__check { display: flex; align-items: center; gap: 8px; margin-right: auto; font-size: 12.5px; cursor: pointer; }
         .mcfo-doc__check input { accent-color: #4d7ea6; width: 15px; height: 15px; margin: 0; }
         .mcfo-doc .mcfo-doc__btn { padding: 6px 12px; border: 1px solid #2c4254; border-radius: 7px; background: #0e1821; color: #d7e2ea; font: inherit; font-size: 12.5px; cursor: pointer; }
@@ -6481,6 +6530,7 @@
             try {
                 framePanelMode(frame); armStripeHandoff(frame); applyGlassToFrames(); laedt.remove();
                 themeFrame(frame);      // the page inside takes the theme as well (section 3b)
+                try { shopDocAssist(frame.contentDocument); } catch (e) {}   // quest tags, euros (12d)
             } finally {
                 frame.setAttribute('data-mcfo-ready', '1');
             }
@@ -6846,7 +6896,10 @@
         entries.push({ title: 'How to', run: showHowTo });
         entries.push({ title: 'Changelog', run: showChangelog });
         // A newer MarbleLuceFall, found by the update check (12c): first, in red.
-        if (updateAvailable()) entries.unshift({ title: 'Update available: MLF ' + updateLatest, cls: 'mcfo-menu__update', run: installUpdate }, { separator: true });
+        // Daily rewards waiting (12d): first, in gold — below the update when both are there.
+        const waiting = dailyWaiting();
+        if (waiting) entries.unshift({ title: `Claim all dailies (${waiting})`, cls: 'mcfo-menu__daily', run: () => claimDailies(false) }, { separator: true });
+        if (updateAvailable()) entries.unshift({ title: 'Update available: MLF ' + updateLatest, cls: 'mcfo-menu__update', run: installUpdate }, ...(waiting ? [] : [{ separator: true }]));
         return entries;
     }
 
@@ -10000,12 +10053,19 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.4';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.27';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.27', date: '2026-09-24', items: [
+            'Quest alarm: an offer in the shop that would complete one of today\'s open shop quests gets a gold Quest tag, and the Shop button (or the Shop sign on the Gold card) a gold dot while such an offer is in the rotation. Settings › Shop and dailies › Quest alarm',
+            'Every diamond price in the shop shows what those diamonds cost in euros, from the cheapest to the dearest diamond pack. Settings › Shop and dailies › Diamond prices in euros',
+            'Claim all dailies: a gold dot on your account card while a quest reward or a daily item is waiting, and "Claim all dailies" at the top of its menu. Next to the red update dot when both are up. Settings › Shop and dailies › Claim all dailies',
+            'Opt-in: dailies can also claim themselves, right after the daily reset too, with a short notice of what came in. Settings › Shop and dailies › Claim dailies by themselves',
+            'What\'s new, Changelog and How to keep their buttons at the bottom while the text scrolls, and "Settings › …" in them is now a link that opens that very page and points at the switch.',
+        ] },
         { v: '6.26.4', date: '2026-09-24', items: ['The folded ticket rail is centred on the board again. Unfolding it now only grows it to the right, so the footer line on the left stays readable.'] },
         { v: '6.26.3', date: '2026-09-24', items: ['With the ticket rail unfolded, the footer line (season, episode, MCF and MLF version) stays readable: on narrower screens like 1920x1080 the rail moves a little to the right instead of covering it.'] },
         { v: '6.26.2', date: '2026-09-24', items: ['The update notice shows up sooner: no extra waiting time after a new version is found, and a fresh check whenever you come back to the tab.'] },
@@ -10247,6 +10307,11 @@
                 'Attack when free (opt-in in Settings) waits until your marble is free and attacks for you. Set to try again, it starts over after every miss until you are King.',
                 'On the throne (opt-in in Settings) sets your toll and pours the beverages you picked by itself when you take the crown, once per reign. Beverages spend gold or diamonds for good.',
             ] },
+            { title: 'Shop and dailies', items: [
+                'A gold Quest tag in the shop marks an offer that would complete one of today\'s open shop quests; while one is in the rotation, the Shop sign on the Gold card has a gold dot.',
+                'Diamond prices show what they cost in euros, from the cheapest to the dearest diamond pack.',
+                'A gold dot on your account card means a daily reward is waiting: "Claim all dailies" at the top of the menu takes everything that is ready. Settings › Shop and dailies › Claim dailies by themselves does it without the click.',
+            ] },
             { title: 'Chat', items: [
                 'The chat folds into a slim rail with a counter for new messages, or pops out into a window of its own.',
                 'The message box grows with long messages, up to five lines.',
@@ -10284,17 +10349,74 @@
     }
     const niceDate = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
+    // Returns the scrolling part; docFoot puts its bar below it, outside the scroll.
     function docBox(body) {
         body.textContent = '';
         const box = document.createElement('div');
         box.className = 'mcfo-doc';
+        const scroll = document.createElement('div');
+        scroll.className = 'mcfo-doc__scroll';
+        box.appendChild(scroll);
         body.appendChild(box);
-        return box;
+        return scroll;
     }
     function docList(box, items) {
         const ul = document.createElement('ul');
-        for (const text of items) { const li = document.createElement('li'); li.textContent = text; ul.appendChild(li); }
+        for (const text of items) { const li = document.createElement('li'); linkSettings(li, text); ul.appendChild(li); }
         box.appendChild(ul);
+    }
+
+    // "Settings › Chat › Tidy name suggestions", "(Settings, King tile, After a miss)", "in Settings
+    // under Theme": the way changelog and how-to have always pointed at a switch. Wherever the
+    // words after "Settings" are a real page — and after that, optionally, a real switch on it —
+    // they become a link that opens exactly there. Matched against SETTINGS_SECTIONS, so a
+    // renamed page simply stops being a link instead of pointing into nothing, and old entries
+    // get their links without being rewritten.
+    function linkSettings(el, text) {
+        const titles = SETTINGS_SECTIONS.map(x => x.title).sort((a, b) => b.length - a.length);
+        let rest = String(text), m;
+        const sep = /^(\s*[›,]\s*|\s+under\s+)/;
+        while ((m = /\bSettings\b/.exec(rest))) {
+            let tail = rest.slice(m.index + m[0].length);
+            const s1 = sep.exec(tail);
+            const title = s1 && titles.find(t => tail.slice(s1[0].length).startsWith(t));
+            if (!title) { el.append(rest.slice(0, m.index + m[0].length)); rest = tail; continue; }
+            let len = m[0].length + s1[0].length + title.length, label = null;
+            tail = rest.slice(m.index + len);
+            const s2 = /^\s*[›,]\s*/.exec(tail);
+            if (s2) {
+                const section = SETTINGS_SECTIONS.find(x => x.title === title);
+                const labels = sectionItems(section).map(i => i.label).filter(Boolean)
+                    .concat(...sectionItems(section).map(i => [i.sub && i.sub.label, ...(i.subs || []).map(x => x.label)]).filter(Boolean))
+                    .sort((a, b) => b.length - a.length);
+                label = labels.find(l => tail.slice(s2[0].length).startsWith(l)) || null;
+                if (label) len += s2[0].length + label.length;
+            }
+            el.append(rest.slice(0, m.index));
+            const a = document.createElement('a');
+            a.className = 'mcfo-doc__link';
+            a.href = '#';
+            a.textContent = rest.slice(m.index, m.index + len);
+            a.addEventListener('click', e => { e.preventDefault(); openSettingsAt(title, label); });
+            el.appendChild(a);
+            rest = rest.slice(m.index + len);
+        }
+        el.append(rest);
+    }
+    function openSettingsAt(title, label) {
+        settingsView = title;
+        showSettings();
+        if (!label) return;
+        const w = windows.get(SETTINGS_KEY);
+        const hit = w && w.body && [...w.body.querySelectorAll('.mcfo-set__label, .mcfo-set__sub-label')]
+            .find(x => x.textContent.trim() === label);
+        const item = hit && (hit.closest('.mcfo-set__item') || hit.closest('.mcfo-set__row'));
+        if (!item) return;
+        item.scrollIntoView({ block: 'center' });
+        // A ring that fades once — shows where to look, then gets out of the way.
+        item.classList.add('mcfo-set__item--found');
+        requestAnimationFrame(() => item.classList.add('mcfo-set__item--fade'));
+        setTimeout(() => item.classList.remove('mcfo-set__item--found', 'mcfo-set__item--fade'), 3000);
     }
     function docVersion(box, entry) {
         const head = document.createElement('div');
@@ -10317,7 +10439,7 @@
         const foot = document.createElement('div');
         foot.className = 'mcfo-doc__foot';
         foot.append(...children);
-        box.appendChild(foot);
+        (box.parentNode && box.parentNode.classList.contains('mcfo-doc') ? box.parentNode : box).appendChild(foot);
     }
 
     function showDocWindow(key, title, size, fill) {
@@ -12421,6 +12543,339 @@
     }
 
     // =========================================================================================
+    // 12d. SHOP AND DAILIES: QUEST ALARM, EURO PRICES, CLAIM ALL (6.27)
+    // =========================================================================================
+    // Three things the MarbleMind bot did for its own accounts, done here for the player at the
+    // keyboard — with their own login, through the same endpoints the game's pages use:
+    //
+    //   Quest alarm   An offer that would complete one of today's open shop quests gets a
+    //                 "Quest" tag in the shop, and the Shop button a gold dot while such an offer
+    //                 is in a rotation. Shop quests are only doable while a matching offer is up
+    //                 (a rotation lasts 15 minutes), which is why this is worth a dot at all.
+    //   Euro prices   Beside every diamond price, what those diamonds cost in euros.
+    //   Claim all     Gold dot on the account card when a quest reward or a daily item is waiting,
+    //                 "Claim all dailies" at the top of the account menu, and — opt-in — claiming
+    //                 by themselves.
+    //
+    // Only reading, except for the claims. Claims are free and idempotent (a second claim answers
+    // 200 with idempotentReplay and changes nothing), so a double click or two open tabs cannot
+    // hurt. Nothing here ever buys.
+    //
+    // /api/dailies (as the game's /dailies.js reads it):
+    //   quests.quests[]      { instanceId, title, definitionId, parameters, complete, claimState
+    //                          'unclaimed'|'pending'|'claimed', reward {currency, amount} }
+    //   dailyItems.items[]   { rankId, rankName, status 'claimed'|…, item (only once claimed —
+    //                          an unclaimed item is hidden until the reveal) }
+    //   questsResetAtMs      next reset
+    // Claims: POST /api/dailies/quests/{instanceId}/claim and /api/dailies/items/{rankId}/claim,
+    // body {}. The API answers some refusals with 200 AND ok:false — both count as failure.
+    //
+    // Shop quests carry their condition: definitionId "shop:chat_shop:king_chat_bubble_style:ethereal"
+    // with parameters { shopKind, shopItemType, minimumRarity }. The CROWN shop's quests have NO
+    // shopItemType (the shop only sells crowns) — comparing against it anyway matched nothing for
+    // two days in the bot. A missing type means "any".
+    const DAILY_EVERY_MS = 5 * 60 * 1000;
+    const SHOP_EVERY_MS  = 2 * 60 * 1000;
+    const SHOP_RANK = { common: 1, uncommon: 2, rare: 3, epic: 4, legendary: 5, mythic: 6, ethereal: 7, cosmic: 8, exclusive: 9, unique: 10 };
+    // Quest wording and API segment for the same shop: chat_shop/chat, crown_shop/crowns, marbles.
+    const shopNorm = s => String(s || '').toLowerCase().replace(/_shop$/, '').replace(/s$/, '');
+    const SHOP_SEGMENT = { chat: 'chat', crown: 'crowns', marble: 'marbles' };
+
+    const daily = { data: null, at: 0, busy: false, resetTimer: 0 };
+    const shopOffers = new Map();    // segment -> { at, offers: Map(id -> offer) }
+    const money = { usdLo: null, usdHi: null, eurPerUsd: null, at: 0 };
+
+    const escapeHtml = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    async function apiJson(path, opts = {}) {
+        const res = await fetch(path, Object.assign({ credentials: 'same-origin', cache: 'no-store',
+            headers: Object.assign({ Accept: 'application/json' }, opts.body ? { 'Content-Type': 'application/json' } : {}) }, opts));
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || (body && body.ok === false)) throw new Error((body && body.error) || 'HTTP ' + res.status);
+        return body;
+    }
+
+    // --- Dailies ---
+    function dailyClaimable(d) {
+        const quests = ((d && d.quests && d.quests.quests) || [])
+            .filter(q => q.complete === true && q.claimState !== 'claimed' && q.claimState !== 'pending');
+        const items = (d && d.dailyItems && d.dailyItems.enabled !== false ? d.dailyItems.items || [] : [])
+            .filter(i => i.status !== 'claimed' && i.status !== 'locked');
+        return { quests, items, n: quests.length + items.length };
+    }
+    const dailyWaiting = () => (settings.dailyClaimAll || settings.dailyAutoClaim) && !signedOut() ? dailyClaimable(daily.data).n : 0;
+
+    async function loadDailies() {
+        if (signedOut() || (!settings.dailyClaimAll && !settings.dailyAutoClaim && !settings.shopQuestAlarm)) return;
+        try { daily.data = await apiJson('/api/dailies'); daily.at = Date.now(); }
+        catch (e) { return; }   // a busy server evening; the next beat tries again
+        // Straight after the reset the new quests and items are there — look again then, instead
+        // of up to five minutes later.
+        clearTimeout(daily.resetTimer);
+        const reset = Number(daily.data.questsResetAtMs) - Date.now();
+        if (reset > 0 && reset < 24 * 3600 * 1000) daily.resetTimer = setTimeout(loadDailies, reset + 20 * 1000);
+        showDailyDot();
+        if (settings.dailyAutoClaim && dailyClaimable(daily.data).n) claimDailies(true);
+        refreshShopQuests();
+    }
+
+    const rewardText = r => {
+        const n = Number(r && r.amount);
+        const cur = String(r && r.currency || '').replace(/s$/, '');   // gold, diamond, ticket
+        return n > 0 ? '+' + n.toLocaleString('en-US') + ' ' + cur + (cur === 'gold' || n === 1 ? '' : 's') : '';
+    };
+
+    async function claimDailies(auto) {
+        if (daily.busy) return;
+        daily.busy = true;
+        try {
+            // Fresh first: the list may be minutes old, and something may have been claimed in
+            // the Dailies window or another tab since.
+            try { daily.data = await apiJson('/api/dailies'); daily.at = Date.now(); } catch (e) {}
+            const { quests, items } = dailyClaimable(daily.data);
+            if (!quests.length && !items.length) { if (!auto) notice('Nothing to claim right now.'); return; }
+            const rewards = [], failed = [];
+            let nq = 0;
+            for (const q of quests) {
+                try {
+                    const r = await apiJson(`/api/dailies/quests/${encodeURIComponent(q.instanceId)}/claim`, { method: 'POST', body: '{}' });
+                    rewards.push(rewardText(r.reward || q.reward));
+                    nq++;
+                } catch (e) { failed.push(`${q.title || 'quest'}: ${e.message}`); }
+            }
+            const claimedItems = [];
+            for (const i of items) {
+                try {
+                    await apiJson(`/api/dailies/items/${encodeURIComponent(i.rankId)}/claim`, { method: 'POST', body: '{}' });
+                    claimedItems.push(i.rankId);
+                } catch (e) { failed.push(`${i.rankName || 'item'}: ${e.message}`); }
+            }
+            // The item itself only shows up after the claim (the game reveals it), so read again.
+            try { daily.data = await apiJson('/api/dailies'); daily.at = Date.now(); } catch (e) {}
+            const got = ((daily.data && daily.data.dailyItems && daily.data.dailyItems.items) || [])
+                .filter(i => claimedItems.includes(i.rankId))
+                .map(i => `${i.rankName || 'Daily'} item: <b>${escapeHtml((i.item && i.item.displayName) || 'claimed')}</b>`);
+            const parts = [];
+            if (nq > 0) parts.push(`${nq} quest${nq === 1 ? '' : 's'}${rewards.filter(Boolean).length ? ' (' + rewards.filter(Boolean).join(', ') + ')' : ''}`);
+            parts.push(...got);
+            if (parts.length) notice(`${auto ? 'Dailies claimed by themselves' : 'Dailies claimed'}: ${parts.join(' · ')}`);
+            if (failed.length) notice(`Could not claim: ${escapeHtml(failed.join(' · '))}`, 'error');
+        } finally {
+            daily.busy = false;
+            showDailyDot();
+        }
+    }
+
+    // Beside the red update dot (12c) when both are up, never on top of it.
+    function showDailyDot() {
+        const n = dailyWaiting();
+        const card = role('profile-entry');
+        if (!card) return;
+        let dot = card.querySelector(':scope > .mcfo-dailydot');
+        if (n && !dot) {
+            dot = document.createElement('span');
+            dot.className = 'mcfo-dailydot';
+            card.appendChild(dot);
+        }
+        if (dot) {
+            dot.hidden = !n;
+            dot.title = n ? `${n} daily reward${n === 1 ? '' : 's'} to claim` : '';
+        }
+    }
+
+    // --- Money ---
+    // There is no one price per diamond: the packages are not linear, and not even monotonic
+    // (the $100 pack is worse than the $75 one). A mean would describe a pack nobody buys. So a
+    // range: from the cheapest rate of any pack to the dearest — every diamond cost something in
+    // that band. USD comes from the game's own packages, the exchange rate from the ECB rates at
+    // frankfurter.dev (no key, allows the call from this page), both cached for a day.
+    const MONEY_STORE = 'mcfo_money';
+    async function loadMoney() {
+        if (!settings.shopEuro || Date.now() - money.at < 12 * 3600 * 1000) return;
+        try {
+            const c = JSON.parse(localStorage.getItem(MONEY_STORE) || 'null');
+            if (c && Date.now() - c.at < 24 * 3600 * 1000 && c.usdLo > 0 && c.eurPerUsd > 0) { Object.assign(money, c); return; }
+        } catch (e) {}
+        try {
+            const p = await apiJson('/api/payments/packages');
+            let lo = null, hi = null;
+            for (const k of (p.packages || [])) {
+                const cents = Number(k.priceAmountCents), dia = Number(k.diamondAmount);
+                if (!(cents > 0) || !(dia > 0)) continue;
+                const usd = cents / 100 / dia;
+                if (lo === null || usd < lo) lo = usd;
+                if (hi === null || usd > hi) hi = usd;
+            }
+            const fx = await fetch('https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR', { credentials: 'omit', cache: 'no-store' })
+                .then(r => r.ok ? r.json() : null).catch(() => null);
+            const rate = Number(fx && fx.rates && fx.rates.EUR);
+            if (lo > 0 && rate > 0) {
+                Object.assign(money, { usdLo: lo, usdHi: hi, eurPerUsd: rate, at: Date.now() });
+                try { localStorage.setItem(MONEY_STORE, JSON.stringify(money)); } catch (e) {}
+            }
+        } catch (e) {}
+    }
+    function euroText(diamonds) {
+        const d = Number(diamonds);
+        if (!(d > 0) || !money.usdLo || !money.eurPerUsd) return '';
+        const f = v => (d * v * money.eurPerUsd).toLocaleString(undefined, { style: 'currency', currency: 'EUR' });
+        const lo = f(money.usdLo), hi = f(money.usdHi || money.usdLo);
+        return lo === hi ? '≈ ' + lo : `≈ ${lo}–${hi}`;
+    }
+
+    // --- Quest alarm ---
+    function openShopQuests() {
+        if (!settings.shopQuestAlarm) return [];
+        return ((daily.data && daily.data.quests && daily.data.quests.quests) || []).filter(q =>
+            /^shop:/.test(q.definitionId || '') && q.complete !== true && q.claimState !== 'claimed');
+    }
+    function questCondition(q) {
+        const p = q.parameters || {};
+        const part = String(q.definitionId || '').split(':');   // shop:<kind>[:<type>]:<rarity>
+        return {
+            kind: shopNorm(p.shopKind || part[1]),
+            type: p.shopItemType || (part.length > 3 ? part[2] : null),
+            rarity: String(p.minimumRarity || part[part.length - 1] || '').toLowerCase(),
+        };
+    }
+    function offerQuest(offer, segment) {
+        if (!offer || offer.owned === true || offer.status === 'sold_out') return null;
+        return openShopQuests().find(q => {
+            const c = questCondition(q);
+            return c.kind === shopNorm(segment)
+                && (!c.type || c.type === offer.slotType || c.type === offer.itemType)
+                && (SHOP_RANK[String(offer.rarity || '').toLowerCase()] || 0) >= (SHOP_RANK[c.rarity] || 99);
+        }) || null;
+    }
+    // Always through .../me: the public shop answers owned:null, which reads like "not yet owned".
+    async function loadShop(segment, maxAge = SHOP_EVERY_MS) {
+        const have = shopOffers.get(segment);
+        if (have && Date.now() - have.at < maxAge) return have;
+        try {
+            const d = await apiJson(`/api/shops/${encodeURIComponent(segment)}/me`);
+            const entry = { at: Date.now(), offers: new Map((d.offers || []).map(o => [String(o.id), o])) };
+            shopOffers.set(segment, entry);
+            return entry;
+        } catch (e) { return have || null; }
+    }
+    // Only the shops an open quest points at, and only while there is one — otherwise not a
+    // single extra request.
+    async function refreshShopQuests() {
+        const kinds = [...new Set(openShopQuests().map(q => SHOP_SEGMENT[questCondition(q).kind]).filter(Boolean))];
+        for (const s of kinds) await loadShop(s);
+        showShopDot();
+    }
+    function shopHits() {
+        const out = [];
+        for (const q of openShopQuests()) {
+            const seg = SHOP_SEGMENT[questCondition(q).kind];
+            const entry = seg && shopOffers.get(seg);
+            if (!entry || Date.now() - entry.at > 15 * 60 * 1000) continue;
+            for (const o of entry.offers.values()) if (offerQuest(o, seg) === q) out.push({ q, o });
+        }
+        return out;
+    }
+    // On the footer's Shop button AND on the "Shop" signpost of the gold card: by default the
+    // footer button is hidden (FOOTER_BUTTONS, "still in the Gold card"), and a dot on a hidden
+    // button would be no alarm at all.
+    function showShopDot() {
+        const hits = shopHits();
+        const hosts = [role('shop-nav'),
+            document.querySelector('[data-role="metric-cell"][data-metric-role="gold"] > .mcfo-signpost')];
+        for (const btn of hosts) {
+            if (!btn) continue;
+            let dot = btn.querySelector(':scope > .mcfo-shopdot');
+            if (hits.length && !dot) {
+                dot = document.createElement('span');
+                dot.className = 'mcfo-shopdot';
+                btn.appendChild(dot);
+            }
+            if (dot) {
+                dot.hidden = !hits.length;
+                btn.title = hits.length ? 'In the shop now for your quest: ' + hits.map(h => h.o.displayName).join(', ') : '';
+            }
+        }
+    }
+
+    // --- Inside the shop page (a window's frame, or the page itself) ---
+    const SHOP_CSS = `
+        .mcfo-eur { display: block; margin-top: 2px; font-size: 0.86em; opacity: 0.72; font-style: normal; }
+        .shopBuyButton .mcfo-eur { margin-top: 3px; }
+        .mcfo-questtag { position: absolute; left: 8px; top: 8px; z-index: 3; pointer-events: none;
+            padding: 2px 7px; border-radius: 999px; background: #f2c14e; color: #1b1405;
+            font: 800 11px/1.4 system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35); }
+        article.shopTile[data-mcfo-quest] { position: relative; }`;
+    function shopDocAssist(doc) {
+        if (!doc || !doc.getElementById || !doc.getElementById('shop-root') || doc.documentElement.hasAttribute('data-mcfo-shopassist')) return;
+        doc.documentElement.setAttribute('data-mcfo-shopassist', '1');
+        const st = doc.createElement('style');
+        st.id = 'mcfo-shop-assist';
+        st.textContent = SHOP_CSS;
+        (doc.head || doc.documentElement).appendChild(st);
+        let queued = false;
+        const run = () => { queued = false; annotateShop(doc); };
+        new MutationObserver(() => { if (!queued) { queued = true; setTimeout(run, 120); } })
+            .observe(doc.getElementById('shop-root'), { childList: true, subtree: true });
+        run();
+    }
+    async function annotateShop(doc) {
+        if (!settings.shopEuro && !settings.shopQuestAlarm) return;
+        const cur = doc.querySelector('.shopTypeButton[aria-current="page"]');
+        const segment = (cur && cur.getAttribute('data-shop-kind')) || 'crowns';
+        await Promise.all([loadMoney(), daily.data ? null : loadDailies()]);
+        const entry = await loadShop(segment, 60 * 1000);
+        if (!entry) return;
+        for (const tile of doc.querySelectorAll('article.shopTile[data-offer-id]')) {
+            const offer = entry.offers.get(tile.getAttribute('data-offer-id'));
+            const small = tile.querySelector('.shopTileText small');
+            const eur = settings.shopEuro && offer && offer.prices ? euroText(offer.prices.diamonds) : '';
+            let e = small && small.querySelector('.mcfo-eur');
+            if (small && eur && !e) { e = doc.createElement('span'); e.className = 'mcfo-eur'; small.appendChild(e); }
+            if (e && e.textContent !== eur) e.textContent = eur;
+            const q = settings.shopQuestAlarm ? offerQuest(offer, segment) : null;
+            let tag = tile.querySelector(':scope > .mcfo-questtag');
+            if (q && !tag) { tag = doc.createElement('span'); tag.className = 'mcfo-questtag'; tag.textContent = 'Quest'; tile.appendChild(tag); }
+            if (tag) { if (!q) tag.remove(); else tag.title = q.title || 'Completes a daily quest'; }
+            if (q) tile.setAttribute('data-mcfo-quest', '1'); else tile.removeAttribute('data-mcfo-quest');
+        }
+        // The buy button of the selected offer, in the panel beside the grid.
+        const sel = doc.querySelector('article.shopTile[aria-selected="true"]');
+        const offer = sel && entry.offers.get(sel.getAttribute('data-offer-id'));
+        const btn = doc.querySelector('.shopBuyButton[data-currency="diamonds"]');
+        if (btn) {
+            const eur = settings.shopEuro && offer && offer.prices ? euroText(offer.prices.diamonds) : '';
+            let e = btn.querySelector('.mcfo-eur');
+            if (eur && !e) { e = doc.createElement('small'); e.className = 'mcfo-eur'; btn.appendChild(e); }
+            if (e && e.textContent !== eur) e.textContent = eur;
+        }
+    }
+
+    // --- A short notice, bottom centre, above the footer ---
+    function notice(html, tone) {
+        let box = document.querySelector('.mcfo-notices');
+        if (!box) { box = document.createElement('div'); box.className = 'mcfo-notices'; document.body.appendChild(box); }
+        const n = document.createElement('div');
+        n.className = 'mcfo-notice' + (tone === 'error' ? ' mcfo-notice--error' : '');
+        n.innerHTML = `<span class="mcfo-notice__text">${html}</span><button type="button" class="mcfo-notice__x" aria-label="Dismiss">×</button>`;
+        n.querySelector('button').addEventListener('click', () => n.remove());
+        box.appendChild(n);
+        setTimeout(() => n.remove(), 12000);
+    }
+
+    function startDailies() {
+        loadDailies();
+        loadMoney();
+        setInterval(() => { if (!document.hidden) loadDailies(); }, DAILY_EVERY_MS);
+        setInterval(() => { if (!document.hidden && openShopQuests().length) refreshShopQuests(); }, SHOP_EVERY_MS);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && Date.now() - daily.at > 60 * 1000) loadDailies();
+        });
+        // The shop opened as a page of its own, not in a window.
+        shopDocAssist(document);
+    }
+
+    // =========================================================================================
     // 12. FOOTER: SEASON, EPISODE, BUILD
     // =========================================================================================
     // Season and episode lived inside the tileset card and filled its upper line to within 9px
@@ -12716,6 +13171,8 @@
         buildCards();
         buildFooterMeta();
         showUpdate();
+        showDailyDot();
+        showShopDot();
         buildTilesetBanner();
         buildRailGroup();
         buildUnbid();
@@ -12778,6 +13235,7 @@
     step('beverages', () => { pollBeverages(); setInterval(pollBeverages, 20000); });
     step('build id', loadBuildId);
     step('update check', startUpdateCheck);
+    step('dailies and shop', startDailies);
     // A moment after start-up, once the game has built its page.
     setTimeout(maybeShowWhatsNew, 1200);
     }   // end of main()

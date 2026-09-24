@@ -20,6 +20,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **Board fit** — the board sizes itself to your screen; see-through board frames.
 - **Music player** — the game's whole soundtrack by album: pick any track, shuffle it, take off the ones you would rather not hear, jump anywhere in a track. It streams instead of downloading the whole file, waits when the game's server sends the music slower than it plays, and remembers where you stopped. The game itself plays straight through one list, and Next is the only way along it.
 - **Player bar** — a small player to drag anywhere on the page: what is playing, previous, play, next, shuffle, volume and the loading line. It stays where you put it.
+- **Shop and dailies** — a gold Quest tag on shop offers that would complete an open shop quest (and a gold dot while one is in the rotation), euro prices beside every diamond price, and "Claim all dailies" in one click from the account menu — or, opt-in, claimed by themselves.
 - **Update notice** — a red dot on the account card within minutes of a new release, with a one-click update; both versions (MCF and MLF) in the footer.
 - **Settings gear** — one click to all settings, including the game's own sound and graphics levels.
 - **Performance levels** and **Deluxe effects** (full, subtle, off) for slower machines.
@@ -28,7 +29,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 ## Good to know
 
 - Purchases always go through the game's own buttons — the script never buys anything by itself.
-- It talks to no third-party service: everything it shows comes from the page or the game's own endpoints.
+- Everything it shows comes from the page or the game's own endpoints, with one exception: for the euro prices it fetches today's USD→EUR rate from frankfurter.dev (European Central Bank rates, no key, no data sent but the request itself) once a day. Switch the euro prices off and it asks no outside service at all.
 - Every picture in the themes is drawn by the script itself — no logos, stills or fonts of the originals.
 
 The source lives on [GitHub](https://github.com/CuteLuciii/marbleluce-fall); updates arrive here automatically.
