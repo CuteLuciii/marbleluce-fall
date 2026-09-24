@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.24.1
+// @version      6.25
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -298,6 +298,8 @@
               hint: 'The box you type in grows with your message, up to five lines, so a long message stays readable while you write it. Enter sends, as before.' },
             { key: 'chatSuggest', label: 'Tidy name suggestions',
               hint: 'Hides the empty bar the game leaves above the message box, and draws the name list for !tomato and the other targeted commands in the colours of your theme.' },
+            { key: 'chatTomato', label: 'Tomatoes as a short notice',
+              hint: 'When someone throws a tomato at you, the chat shows one small line with their name instead of the picture, with an x to dismiss it.' },
             { key: 'chatStick', label: 'Stay at the newest message',
               hint: 'While you are at the bottom, the chat stays there — also after a reload and when names, fonts or pictures load late. Scroll up to read, and it stays where you are.' },
         ], extra: { title: 'Enhanced chat', items: [
@@ -1388,6 +1390,30 @@
             color: #fff;
             text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), 0 4px 22px rgba(0, 0, 0, 0.75);
         }
+
+        /* === TOMATO NOTICE (6.25, section 9j) === */
+        .mcf-chat__message[data-mcfo-tomato] > :not(.mcfo-tomato) { display: none !important; }
+        .mcf-chat__message[data-mcfo-tomato-gone] { display: none !important; }
+        /* The game frames a command result in a box of its own; the notice is the box. */
+        .mcf-chat__message[data-mcfo-tomato] { padding: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; }
+        .mcfo-tomato {
+            display: flex; align-items: center; gap: 8px;
+            padding: 5px 6px 5px 9px;
+            border-left: 3px solid #e05a47; border-radius: 6px;
+            background: rgba(224, 90, 71, 0.10);
+            font-size: 0.92em; line-height: 1.3;
+        }
+        .mcfo-tomato__icon { flex: none; width: 18px; height: 18px; }
+        .mcfo-tomato__text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .mcfo-tomato__text b { font-weight: 800; }
+        .mcfo-tomato__time { flex: none; font-size: 0.85em; opacity: 0.6; }
+        .mcfo-tomato .mcfo-tomato__x {
+            flex: none; display: grid; place-items: center;
+            width: 22px; height: 22px; padding: 0; margin: 0;
+            border: 0; border-radius: 5px; background: transparent; color: inherit;
+            font: 700 15px/1 system-ui, sans-serif; opacity: 0.55; cursor: pointer;
+        }
+        .mcfo-tomato .mcfo-tomato__x:hover { opacity: 1; background: rgba(255, 255, 255, 0.10); }
 
         /* === MENUS === */
         .mcfo-anchor, .mcfo-anchor * { cursor: pointer !important; }
@@ -9401,8 +9427,9 @@
     function setChatScroll(box, v) { box.scrollTop = Math.max(0, Math.min(v, box.scrollHeight - box.clientHeight)); }
 
     function chatPass() {
-        if (chatSlimPresent()) return;   // the old script owns these attributes while it runs
         const list = document.querySelector(CHAT_LIST_SEL);
+        if (list) tomatoPass(list);
+        if (chatSlimPresent()) return;   // the old script owns these attributes while it runs
         if (!list) return;
         const on = chatPlusActive();
         const all = list.querySelectorAll('article.mcf-chat__message');
@@ -9454,6 +9481,66 @@
         if ((changed || filterChanged) && box) {
             if (atEnd) setChatScroll(box, box.scrollHeight);
             else if (anchor) setChatScroll(box, anchor.offsetTop - anchorOffset);
+        }
+    }
+
+    // =========================================================================================
+    // 9j. TOMATOES AS A SHORT NOTICE (6.25)
+    // =========================================================================================
+    // A tomato that hits you arrives as a private "Command result" — "X sent you a tomato." —
+    // with a picture below it. Whether the picture shows is up to chance: the game drops it when
+    // its path is not one it accepts, and hides the whole frame when it fails to load. The text
+    // always comes. So the line is turned into one small notice of our own, the same every time,
+    // with an x like Discord's "dismiss message".
+    //
+    // The game's own children stay in the node, only hidden: it keeps the node in a cache and may
+    // compare or reuse it, and taking its parts out would be asking for trouble. Private rows live
+    // only in the page (a reload clears them), so dismissed notices are remembered for the page
+    // only — keyed by sender and minute, because the game may render a row afresh.
+    //
+    // Runs from chatPass(), which the chat list observer already drives; it does not depend on the
+    // enhanced chat being switched on.
+    const TOMATO_IN_RE = /^\s*(.+?) sent you a tomato\.?\s*$/i;
+    const TOMATO_ICON = '<svg class="mcfo-tomato__icon" viewBox="0 0 24 24" aria-hidden="true">'
+        + '<circle cx="12" cy="14" r="8.5" fill="#e0483a"/>'
+        + '<ellipse cx="9" cy="11.5" rx="2.4" ry="1.5" fill="#ff8a78" opacity="0.7"/>'
+        + '<path d="M12 6.2 L9 3.6 L11.2 6.4 L7.4 6.6 L11 7.8 L9.6 10 L12 8.4 L14.4 10 L13 7.8 L16.6 6.6 L12.8 6.4 L15 3.6 Z" fill="#3d9a3a"/>'
+        + '</svg>';
+    const tomatoGone = new Set();
+
+    function tomatoPass(list) {
+        const rows = list.querySelectorAll('article.mcf-chat__private');
+        for (const msg of rows) {
+            const own = msg.querySelector(':scope > .mcfo-tomato');
+            if (!settings.chatTomato) {
+                if (own) own.remove();
+                msg.removeAttribute('data-mcfo-tomato');
+                msg.removeAttribute('data-mcfo-tomato-gone');
+                continue;
+            }
+            if (own) continue;
+            const textEl = msg.querySelector(':scope > .mcf-chat__text');
+            const m = textEl && (textEl.textContent || '').match(TOMATO_IN_RE);
+            if (!m) continue;
+            const time = [...msg.querySelectorAll(':scope > .mcf-chat__meta span')]
+                .map(x => x.textContent.trim()).find(t => /^\d{1,2}:\d{2}/.test(t)) || '';
+            const key = m[1] + '|' + time;
+            const note = document.createElement('div');
+            note.className = 'mcfo-tomato';
+            note.innerHTML = TOMATO_ICON + '<span class="mcfo-tomato__text"><b></b> threw a tomato at you</span>'
+                + '<span class="mcfo-tomato__time"></span>'
+                + '<button type="button" class="mcfo-tomato__x" title="Dismiss" aria-label="Dismiss">&times;</button>';
+            note.querySelector('b').textContent = m[1];
+            note.querySelector('.mcfo-tomato__time').textContent = time;
+            note.querySelector('button').addEventListener('click', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                tomatoGone.add(key);
+                msg.setAttribute('data-mcfo-tomato-gone', '1');
+            });
+            msg.appendChild(note);
+            msg.setAttribute('data-mcfo-tomato', '1');
+            if (tomatoGone.has(key)) msg.setAttribute('data-mcfo-tomato-gone', '1');
         }
     }
 
@@ -9863,12 +9950,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.24.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.25';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.25', date: '2026-09-24', items: ['A tomato thrown at you now shows as one small line in the chat - who threw it and when - instead of the picture, which the game showed only some of the time. An x on the line dismisses it, like on Discord. Switch it off under Chat.'] },
         { v: '6.24.1', date: '2026-09-24', items: ['The tileset name now comes in the colour of your theme.', 'Fixed: with a theme on, the dark curtain behind the tileset name stayed.'] },
         { v: '6.24', date: '2026-09-24', items: ['New tileset, no more blackout: instead of the full-screen picture over a dark curtain, the name of the new tileset fades in over the board, and the game stays visible behind it. Switch it off under Header if you miss the picture.'] },
         { v: '6.23.1', date: '2026-09-23', items: ['The game\'s new arena help is hidden: no more tooltips on the Tickets, Points, Gold and Diamonds cards, no "Arena help" button in the footer, no "?" beside the bid buttons and no currency guide in the sound controls.'] },
