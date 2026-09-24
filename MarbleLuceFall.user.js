@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.23.1
+// @version      6.24
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -243,6 +243,8 @@
             { key: 'eventsPanel', label: 'Upcoming tilesets',
               hint: 'Click the tileset card to see what comes next.',
               sub: { key: 'eventsHours', type: 'choice', label: 'Look ahead', def: 12, options: [[3, '3 hours'], [12, '12 hours']] } },
+            { key: 'tilesetBanner', label: 'Tileset name instead of the splash picture',
+              hint: 'When a new tileset begins, its name fades in over the board instead of the full-screen picture, and the board stays visible behind it.' },
             { key: 'settingsButton', label: 'Settings button',
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
@@ -1355,6 +1357,35 @@
             pointer-events: none;
         }
         .mcfo-footermeta__build { opacity: 0.65; }
+
+        /* === TILESET BANNER (6.24) ===
+           The game announces a new tileset with a picture over a nearly black curtain across the
+           whole board. With the option on, curtain and picture go, and a line of text takes their
+           place. The overlay itself stays: its fade in, hold and fade out are the game's own, and
+           the text simply rides along inside it. */
+        html[data-mcfo-tsbanner="1"] [data-role="tileset-transition-splash-overlay"] { background: transparent !important; }
+        html[data-mcfo-tsbanner="1"] [data-role="tileset-transition-splash-image"] { display: none !important; }
+        html:not([data-mcfo-tsbanner="1"]) .mcfo-tsbanner { display: none; }
+        .mcfo-tsbanner {
+            display: grid; justify-items: center; gap: 6px;
+            padding: 18px 42px 20px;
+            border-radius: 14px;
+            background: radial-gradient(ellipse at center, rgba(6, 9, 13, 0.62) 0%, rgba(6, 9, 13, 0.38) 55%, rgba(6, 9, 13, 0) 78%);
+            text-align: center;
+            pointer-events: none;
+        }
+        .mcfo-tsbanner__kicker {
+            font: 700 13px/1 system-ui, sans-serif;
+            letter-spacing: 0.32em; text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.72);
+            text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
+        }
+        .mcfo-tsbanner__name {
+            font: 900 clamp(34px, 5.2vw, 72px)/1.05 "Helvetica Neue", "Arial Black", "Archivo Black", Helvetica, Arial, sans-serif;
+            letter-spacing: 0.02em;
+            color: #fff;
+            text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), 0 4px 22px rgba(0, 0, 0, 0.75);
+        }
 
         /* === MENUS === */
         .mcfo-anchor, .mcfo-anchor * { cursor: pointer !important; }
@@ -9826,12 +9857,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.23.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.24';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.24', date: '2026-09-24', items: ['New tileset, no more blackout: instead of the full-screen picture over a dark curtain, the name of the new tileset fades in over the board, and the game stays visible behind it. Switch it off under Header if you miss the picture.'] },
         { v: '6.23.1', date: '2026-09-23', items: ['The game\'s new arena help is hidden: no more tooltips on the Tickets, Points, Gold and Diamonds cards, no "Arena help" button in the footer, no "?" beside the bid buttons and no currency guide in the sound controls.'] },
         { v: '6.23', date: '2026-09-22', items: [
             'New: a player bar you can put anywhere on the page. Skipping or pausing a track no longer means going through the settings - the bar sits where you drag it, remembers the spot, and is still there after a reload.',
@@ -12046,6 +12078,59 @@
     }
 
     // =========================================================================================
+    // 12b. TILESET BANNER: THE NAME INSTEAD OF THE SPLASH PICTURE (6.24)
+    // =========================================================================================
+    // At the start of a tileset the game fades in a picture over a 92% black curtain that covers
+    // the whole board, for seven seconds all told. Here the curtain and the picture are hidden by
+    // CSS and a line of text goes into the same overlay — so the game still decides when it fades
+    // in and out, and nothing of its timing has to be copied.
+    //
+    // The name is read when the game sets the picture's src: in the same task, just before, it has
+    // already written the new tileset into the header indicator (setActiveTilesetFromCanonicalId
+    // runs ahead of the splash). That is the raw id, "RiskyBusiness", so it goes through
+    // tilesetName() like the schedule. The picture's slug is only the fallback.
+    let tsBannerObserver = null;
+
+    function tsBannerText(img) {
+        const shown = (role('current-tileset-name')?.textContent || '').trim();
+        if (shown) return tilesetName(shown);
+        const slug = ((img.getAttribute('src') || '').match(/([^/]+)\.webp/) || [])[1] || '';
+        return slug.split('-').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    function buildTilesetBanner() {
+        document.documentElement.setAttribute('data-mcfo-tsbanner', settings.tilesetBanner ? '1' : '0');
+        const img = role('tileset-transition-splash-image');
+        if (!img || !img.parentElement) return;
+        let banner = img.parentElement.querySelector(':scope > .mcfo-tsbanner');
+        if (!settings.tilesetBanner) {
+            if (banner) banner.remove();
+            if (tsBannerObserver) { tsBannerObserver.disconnect(); tsBannerObserver = null; }
+            return;
+        }
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.className = 'mcfo-tsbanner';
+            banner.innerHTML = '<div class="mcfo-tsbanner__kicker">New tileset</div>'
+                             + '<div class="mcfo-tsbanner__name"></div>';
+            img.parentElement.appendChild(banner);
+        }
+        const fill = () => {
+            if (!img.getAttribute('src')) return;   // cleared after the fade-out; keep the old text
+            const name = banner.querySelector('.mcfo-tsbanner__name');
+            const text = tsBannerText(img);
+            if (name.textContent !== text) name.textContent = text;
+        };
+        if (!tsBannerObserver || tsBannerObserver.img !== img) {
+            if (tsBannerObserver) tsBannerObserver.disconnect();
+            tsBannerObserver = new MutationObserver(fill);
+            tsBannerObserver.img = img;
+            tsBannerObserver.observe(img, { attributes: true, attributeFilter: ['src'] });
+        }
+        fill();
+    }
+
+    // =========================================================================================
     // 12. FOOTER: SEASON, EPISODE, BUILD
     // =========================================================================================
     // Season and episode lived inside the tileset card and filled its upper line to within 9px
@@ -12329,6 +12414,7 @@
         bindMenu(firstRole('session-cell', 'tileset-indicator'), 'events', showEvents);
         buildCards();
         buildFooterMeta();
+        buildTilesetBanner();
         buildRailGroup();
         buildUnbid();
         buildAutobid();
