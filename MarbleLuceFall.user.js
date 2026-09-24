@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.26
+// @version      6.26.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -9982,12 +9982,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.26.1', date: '2026-09-24', items: ['No changes: a release to try out the new update notice.'] },
         { v: '6.26', date: '2026-09-24', items: ['The footer shows both versions, labelled: MCF for the game\'s build, MLF for this script.', 'When a new MarbleLuceFall is out, a red dot appears on your account card within a few minutes. Its menu then starts with a red "Update available" - one click opens the install page. The footer says so too.'] },
         { v: '6.25.1', date: '2026-09-24', items: ['The tileset name is bigger, and its size is yours to pick: a slider under Header, next to the option.', 'A Show now button plays the tileset name right away, so you can judge it without waiting for the next tileset.'] },
         { v: '6.25', date: '2026-09-24', items: ['A tomato thrown at you now shows as one small line in the chat - who threw it and when - instead of the picture, which the game showed only some of the time. An x on the line dismisses it, like on Discord. Switch it off under Chat.'] },
