@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.26.2
+// @version      6.26.3
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1362,6 +1362,10 @@
             color: #8da2b7;
             white-space: nowrap;
             pointer-events: none;
+            /* Never squeezed by a wide ticket rail: with nowrap the text would simply run out of
+               its shrunken box and under the rail, and the box would no longer say where the
+               text ends (centreRail measures it). */
+            flex-shrink: 0;
         }
         .mcfo-footermeta__build, .mcfo-footermeta__mlf { opacity: 0.65; }
         .mcfo-footermeta .mcfo-footermeta__update {
@@ -9946,6 +9950,25 @@
             }
         }
 
+        // Nor over the footer line on the left. With the rail unfolded and the extra chips
+        // unlocked it is over 900px wide, and centred on the board with the chat open its left
+        // end ran across season, episode and both versions (reported at 1920x1080). There is
+        // room to the right before the navigation, so the rail moves over — as far as needed,
+        // never into the navigation.
+        const meta = settings.footerMeta ? document.querySelector('.mcfo-footermeta') : null;
+        const m = meta && meta.getBoundingClientRect();
+        if (m && m.width) {
+            const push = m.right + 16 - (r.left + offset);
+            if (push > 0) {
+                let room = Infinity;
+                if (chips && nav) {
+                    const c = chips.getBoundingClientRect(), n = nav.getBoundingClientRect();
+                    if (c.width && n.width) room = n.left - 20 - (c.right + offset);
+                }
+                offset += Math.max(0, Math.min(push, room));
+            }
+        }
+
         rail.style.transform = Math.abs(offset) < 1 ? '' : `translateX(${Math.round(offset)}px)`;
     }
 
@@ -9982,12 +10005,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.3';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.26.3', date: '2026-09-24', items: ['With the ticket rail unfolded, the footer line (season, episode, MCF and MLF version) stays readable: on narrower screens like 1920x1080 the rail moves a little to the right instead of covering it.'] },
         { v: '6.26.2', date: '2026-09-24', items: ['The update notice shows up sooner: no extra waiting time after a new version is found, and a fresh check whenever you come back to the tab.'] },
         { v: '6.26.1', date: '2026-09-24', items: ['No changes: a release to try out the new update notice.'] },
         { v: '6.26', date: '2026-09-24', items: ['The footer shows both versions, labelled: MCF for the game\'s build, MLF for this script.', 'When a new MarbleLuceFall is out, a red dot appears on your account card within a few minutes. Its menu then starts with a red "Update available" - one click opens the install page. The footer says so too.'] },
