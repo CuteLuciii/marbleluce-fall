@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.27.1
+// @version      6.27.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1408,7 +1408,9 @@
         }
         .mcfo-dailydot[hidden], .mcfo-shopdot[hidden] { display: none; }
         html[data-mcfo-update] .mcfo-dailydot { right: 11px; }
-        [data-role="shop-nav"], [data-metric-role="gold"] > .mcfo-signpost { position: relative; }
+        /* The dot needs a positioned host. The floating signpost already is one (absolute, centred in
+           its card) — giving it position: relative too, as 6.27 did, pulled it out of place. */
+        [data-role="shop-nav"], [data-metric-role="gold"] > .mcfo-signpost:not(.mcfo-signpost--float) { position: relative; }
         .mcfo-menu button.mcfo-menu__daily { color: #f2c14e; font-weight: 700; }
         .mcfo-menu button.mcfo-menu__daily:hover { background: rgba(242, 193, 78, 0.14); }
         .mcfo-notices {
@@ -10053,12 +10055,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.27.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.27.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.27.2', date: '2026-09-24', items: ['The Shop sign on the Gold card is back in its place — 6.27 had moved it down a little.'] },
         { v: '6.27.1', date: '2026-09-24', items: ['The update notice comes within about two minutes of a release instead of up to seven: the script now asks Greasy Fork itself, where the update is installed from, instead of a copy on GitHub that is cached for five minutes.'] },
         { v: '6.27', date: '2026-09-24', items: [
             'Quest alarm: an offer in the shop that would complete one of today\'s open shop quests gets a gold Quest tag, and the Shop button (or the Shop sign on the Gold card) a gold dot while such an offer is in the rotation. Settings › Shop and dailies › Quest alarm',
