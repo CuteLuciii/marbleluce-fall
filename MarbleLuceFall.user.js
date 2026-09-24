@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.26.1
+// @version      6.26.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -9982,12 +9982,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.26.2', date: '2026-09-24', items: ['The update notice shows up sooner: no extra waiting time after a new version is found, and a fresh check whenever you come back to the tab.'] },
         { v: '6.26.1', date: '2026-09-24', items: ['No changes: a release to try out the new update notice.'] },
         { v: '6.26', date: '2026-09-24', items: ['The footer shows both versions, labelled: MCF for the game\'s build, MLF for this script.', 'When a new MarbleLuceFall is out, a red dot appears on your account card within a few minutes. Its menu then starts with a red "Update available" - one click opens the install page. The footer says so too.'] },
         { v: '6.25.1', date: '2026-09-24', items: ['The tileset name is bigger, and its size is yours to pick: a slider under Header, next to the option.', 'A Show now button plays the tileset name right away, so you can judge it without waiting for the next tileset.'] },
@@ -12314,20 +12315,22 @@
     // every check a fresh one.
     //
     // How often: every two minutes while the tab is visible, once more the moment it becomes
-    // visible again, never while it is hidden. A new version counts only after it has been seen
-    // for 90 seconds: GitHub has it first, and Greasy Fork, where the install button leads,
-    // picks it up from there a little later.
+    // visible again (20 s apart at least), never while it is hidden. There is no waiting time on
+    // top: 6.26 had 90 s, held only in memory, so every reload started it over, and it bought
+    // nothing - raw GitHub hands out a new commit up to five minutes late, and Greasy Fork had
+    // 6.26.1 at the same second, so by the time the dot shows the install works.
+    //
+    // Our own fetch first, the page's as a fallback should the sandbox's ever be refused. Each
+    // check leaves one line in the console, so a "no dot" can be read there.
     const UPDATE_URL = 'https://raw.githubusercontent.com/CuteLuciii/marbleluce-fall/main/version.json';
     const INSTALL_URL = 'https://update.greasyfork.org/scripts/595115/MarbleLuceFall.user.js';
     const UPDATE_EVERY_MS = 2 * 60 * 1000;
-    const UPDATE_GRACE_MS = 90 * 1000;
     let updateLatest = null;           // newest version seen, if newer than this one
-    let updateSeenAt = 0;              // when it was first seen
     let updateCheckedAt = 0;
     let updateBusy = false;
 
     function updateAvailable() {
-        return !!updateLatest && Date.now() - updateSeenAt >= UPDATE_GRACE_MS;
+        return !!updateLatest;
     }
 
     async function checkForUpdate() {
@@ -12335,20 +12338,35 @@
         updateBusy = true;
         updateCheckedAt = Date.now();
         try {
-            const res = await fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store', credentials: 'omit' });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const v = String((await res.json()).version || '').trim();
-            if (/^\d+(\.\d+)*$/.test(v) && cmpVersion(v, SCRIPT_VERSION) > 0) {
-                if (v !== updateLatest) { updateLatest = v; updateSeenAt = Date.now(); }
-            } else {
-                updateLatest = null;
-            }
+            const v = await readLatestVersion();
+            updateLatest = /^\d+(\.\d+)*$/.test(v) && cmpVersion(v, SCRIPT_VERSION) > 0 ? v : null;
+            console.info('[MarbleLuceFall] update check: installed ' + SCRIPT_VERSION + ', published ' + (v || '?')
+                         + (updateLatest ? ' -> update available' : ''));
         } catch (e) {
-            // Offline or GitHub unreachable: simply try again on the next beat.
+            // Offline or GitHub unreachable: try again on the next beat.
+            console.info('[MarbleLuceFall] update check failed:', e && e.message);
         } finally {
             updateBusy = false;
             showUpdate();
         }
+    }
+
+    // Our fetch first, then the page's. Text, parsed here: a Response object handed across
+    // from the page is best only asked for plain values.
+    async function readLatestVersion() {
+        const url = UPDATE_URL + '?t=' + Date.now();
+        const pageFetch = typeof unsafeWindow !== 'undefined' && unsafeWindow && unsafeWindow.fetch;
+        let lastError = null;
+        for (const f of [fetch, pageFetch]) {
+            if (typeof f !== 'function') continue;
+            try {
+                const res = await f.call(f === fetch ? window : unsafeWindow, url, { cache: 'no-store', credentials: 'omit' });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const text = String(await res.text());
+                return String(JSON.parse(text).version || '').trim();
+            } catch (e) { lastError = e; }
+        }
+        throw lastError || new Error('no fetch');
     }
 
     // Called from apply() as well, so the dot comes back when the game rebuilds the card, and
@@ -12378,7 +12396,7 @@
         checkForUpdate();
         setInterval(checkForUpdate, UPDATE_EVERY_MS);
         document.addEventListener('visibilitychange', () => {
-            if (!document.hidden && Date.now() - updateCheckedAt >= 60 * 1000) checkForUpdate();
+            if (!document.hidden && Date.now() - updateCheckedAt >= 20 * 1000) checkForUpdate();
         });
     }
 
