@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.25.1
+// @version      6.26
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1363,7 +1363,25 @@
             white-space: nowrap;
             pointer-events: none;
         }
-        .mcfo-footermeta__build { opacity: 0.65; }
+        .mcfo-footermeta__build, .mcfo-footermeta__mlf { opacity: 0.65; }
+        .mcfo-footermeta .mcfo-footermeta__update {
+            pointer-events: auto; cursor: pointer;
+            padding: 0; border: 0; background: none; font: inherit;
+            color: #ff5a5a; opacity: 1; font-weight: 700;
+        }
+        .mcfo-footermeta .mcfo-footermeta__update:hover { text-decoration: underline; }
+
+        /* === UPDATE NOTICE (6.26, section 12c) === */
+        html[data-mcfo-update] [data-role="profile-entry"] { position: relative; }
+        .mcfo-updot {
+            position: absolute; top: -4px; right: -4px; z-index: 5;
+            width: 11px; height: 11px; border-radius: 50%;
+            background: #ff3b3b; box-shadow: 0 0 0 2px #0b121a;
+            pointer-events: none;
+        }
+        html:not([data-mcfo-update]) .mcfo-updot { display: none; }
+        .mcfo-menu button.mcfo-menu__update { color: #ff6b6b; font-weight: 700; }
+        .mcfo-menu button.mcfo-menu__update:hover { background: rgba(255, 59, 59, 0.14); }
 
         /* === TILESET BANNER (6.24) ===
            The game announces a new tileset with a picture over a nearly black curtain across the
@@ -6765,6 +6783,7 @@
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.textContent = entry.title;
+                if (entry.cls) b.className = entry.cls;
                 b.addEventListener('click', ev => { ev.stopPropagation(); closeMenus(); entry.run(); });
                 menu.appendChild(b);
             }
@@ -6822,6 +6841,8 @@
         entries.push({ title: 'Settings', run: showSettings });
         entries.push({ title: 'How to', run: showHowTo });
         entries.push({ title: 'Changelog', run: showChangelog });
+        // A newer MarbleLuceFall, found by the update check (12c): first, in red.
+        if (updateAvailable()) entries.unshift({ title: 'Update available: MLF ' + updateLatest, cls: 'mcfo-menu__update', run: installUpdate }, { separator: true });
         return entries;
     }
 
@@ -9961,12 +9982,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.25.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.26', date: '2026-09-24', items: ['The footer shows both versions, labelled: MCF for the game\'s build, MLF for this script.', 'When a new MarbleLuceFall is out, a red dot appears on your account card within a few minutes. Its menu then starts with a red "Update available" - one click opens the install page. The footer says so too.'] },
         { v: '6.25.1', date: '2026-09-24', items: ['The tileset name is bigger, and its size is yours to pick: a slider under Header, next to the option.', 'A Show now button plays the tileset name right away, so you can judge it without waiting for the next tileset.'] },
         { v: '6.25', date: '2026-09-24', items: ['A tomato thrown at you now shows as one small line in the chat - who threw it and when - instead of the picture, which the game showed only some of the time. An x on the line dismisses it, like on Discord. Switch it off under Chat.'] },
         { v: '6.24.1', date: '2026-09-24', items: ['The tileset name now comes in the colour of your theme.', 'Fixed: with a theme on, the dark curtain behind the tileset name stayed.'] },
@@ -12276,6 +12298,90 @@
     }
 
     // =========================================================================================
+    // 12c. UPDATE CHECK (6.26)
+    // =========================================================================================
+    // Tampermonkey looks for updates by itself, but only about once a day, and installs them
+    // silently. This tells you at once: a red dot on the account card, a red first entry in its
+    // menu, and "update to ..." next to the version in the footer. Any of them opens the install
+    // page, and Tampermonkey asks as usual.
+    //
+    // Where the number comes from: a tiny version.json next to the script in the GitHub repo
+    // (written with every release). Greasy Fork would be the natural source, but it sends no CORS
+    // header, so reading it from this page would need an extra permission (@connect) that every
+    // player would be asked for. raw.githubusercontent.com allows it, and the file is a few bytes
+    // instead of the whole 900 KB script. Its CDN caches for five minutes; the query string makes
+    // every check a fresh one.
+    //
+    // How often: every two minutes while the tab is visible, once more the moment it becomes
+    // visible again, never while it is hidden. A new version counts only after it has been seen
+    // for 90 seconds: GitHub has it first, and Greasy Fork, where the install button leads,
+    // picks it up from there a little later.
+    const UPDATE_URL = 'https://raw.githubusercontent.com/CuteLuciii/marbleluce-fall/main/version.json';
+    const INSTALL_URL = 'https://update.greasyfork.org/scripts/595115/MarbleLuceFall.user.js';
+    const UPDATE_EVERY_MS = 2 * 60 * 1000;
+    const UPDATE_GRACE_MS = 90 * 1000;
+    let updateLatest = null;           // newest version seen, if newer than this one
+    let updateSeenAt = 0;              // when it was first seen
+    let updateCheckedAt = 0;
+    let updateBusy = false;
+
+    function updateAvailable() {
+        return !!updateLatest && Date.now() - updateSeenAt >= UPDATE_GRACE_MS;
+    }
+
+    async function checkForUpdate() {
+        if (updateBusy || document.hidden) return;
+        updateBusy = true;
+        updateCheckedAt = Date.now();
+        try {
+            const res = await fetch(UPDATE_URL + '?t=' + Date.now(), { cache: 'no-store', credentials: 'omit' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const v = String((await res.json()).version || '').trim();
+            if (/^\d+(\.\d+)*$/.test(v) && cmpVersion(v, SCRIPT_VERSION) > 0) {
+                if (v !== updateLatest) { updateLatest = v; updateSeenAt = Date.now(); }
+            } else {
+                updateLatest = null;
+            }
+        } catch (e) {
+            // Offline or GitHub unreachable: simply try again on the next beat.
+        } finally {
+            updateBusy = false;
+            showUpdate();
+        }
+    }
+
+    // Called from apply() as well, so the dot comes back when the game rebuilds the card, and
+    // shows up once the grace time is over without waiting for the next check.
+    function showUpdate() {
+        const on = updateAvailable();
+        const html = document.documentElement;
+        if (on) html.setAttribute('data-mcfo-update', updateLatest); else html.removeAttribute('data-mcfo-update');
+        const card = role('profile-entry');
+        if (card) {
+            let dot = card.querySelector(':scope > .mcfo-updot');
+            if (on && !dot) {
+                dot = document.createElement('span');
+                dot.className = 'mcfo-updot';
+                card.appendChild(dot);
+            }
+            if (dot) dot.title = on ? 'MarbleLuceFall ' + updateLatest + ' is available' : '';
+        }
+        buildFooterMeta();
+    }
+
+    function installUpdate() {
+        window.open(INSTALL_URL, '_blank', 'noopener');
+    }
+
+    function startUpdateCheck() {
+        checkForUpdate();
+        setInterval(checkForUpdate, UPDATE_EVERY_MS);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && Date.now() - updateCheckedAt >= 60 * 1000) checkForUpdate();
+        });
+    }
+
+    // =========================================================================================
     // 12. FOOTER: SEASON, EPISODE, BUILD
     // =========================================================================================
     // Season and episode lived inside the tileset card and filled its upper line to within 9px
@@ -12315,7 +12421,10 @@
             strip = document.createElement('div');
             strip.className = 'mcfo-footermeta';
             strip.innerHTML = '<span class="mcfo-footermeta__window"></span>'
-                            + '<span class="mcfo-footermeta__build"></span>';
+                            + '<span class="mcfo-footermeta__build"></span>'
+                            + '<span class="mcfo-footermeta__mlf"></span>'
+                            + '<button type="button" class="mcfo-footermeta__update" hidden></button>';
+            strip.querySelector('.mcfo-footermeta__update').addEventListener('click', installUpdate);
             region.prepend(strip);
         }
 
@@ -12325,8 +12434,16 @@
         if (windowText && windowEl.textContent !== windowText) windowEl.textContent = windowText;
 
         const buildEl = strip.querySelector('.mcfo-footermeta__build');
-        const want = buildId ? '· ' + buildId : '';
+        // Labelled, so it is clear which number is whose: the game's build and this script.
+        const want = buildId ? '· MCF ' + buildId : '';
         if (buildEl.textContent !== want) buildEl.textContent = want;
+        const mlfEl = strip.querySelector('.mcfo-footermeta__mlf');
+        const mlf = '· MLF ' + SCRIPT_VERSION;
+        if (mlfEl.textContent !== mlf) mlfEl.textContent = mlf;
+        const upEl = strip.querySelector('.mcfo-footermeta__update');
+        const up = updateAvailable() ? 'update to ' + updateLatest : '';
+        if (upEl.textContent !== up) upEl.textContent = up;
+        upEl.hidden = !up;
     }
 
     // =========================================================================================
@@ -12559,6 +12676,7 @@
         bindMenu(firstRole('session-cell', 'tileset-indicator'), 'events', showEvents);
         buildCards();
         buildFooterMeta();
+        showUpdate();
         buildTilesetBanner();
         buildRailGroup();
         buildUnbid();
@@ -12620,6 +12738,7 @@
     // Read-only and cheap; also picks up a fresh set of rights after a throne change.
     step('beverages', () => { pollBeverages(); setInterval(pollBeverages, 20000); });
     step('build id', loadBuildId);
+    step('update check', startUpdateCheck);
     // A moment after start-up, once the game has built its page.
     setTimeout(maybeShowWhatsNew, 1200);
     }   // end of main()
