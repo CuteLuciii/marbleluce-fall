@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.27
+// @version      6.27.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -10053,12 +10053,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.27';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.27.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.27.1', date: '2026-09-24', items: ['The update notice comes within about two minutes of a release instead of up to seven: the script now asks Greasy Fork itself, where the update is installed from, instead of a copy on GitHub that is cached for five minutes.'] },
         { v: '6.27', date: '2026-09-24', items: [
             'Quest alarm: an offer in the shop that would complete one of today\'s open shop quests gets a gold Quest tag, and the Shop button (or the Shop sign on the Gold card) a gold dot while such an offer is in the rotation. Settings › Shop and dailies › Quest alarm',
             'Every diamond price in the shop shows what those diamonds cost in euros, from the cheapest to the dearest diamond pack. Settings › Shop and dailies › Diamond prices in euros',
@@ -12449,12 +12450,13 @@
     // menu, and "update to ..." next to the version in the footer. Any of them opens the install
     // page, and Tampermonkey asks as usual.
     //
-    // Where the number comes from: a tiny version.json next to the script in the GitHub repo
-    // (written with every release). Greasy Fork would be the natural source, but it sends no CORS
-    // header, so reading it from this page would need an extra permission (@connect) that every
-    // player would be asked for. raw.githubusercontent.com allows it, and the file is a few bytes
-    // instead of the whole 900 KB script. Its CDN caches for five minutes; the query string makes
-    // every check a fresh one.
+    // Where the number comes from (6.27.1): Greasy Fork's own metadata file, update.greasyfork.org/
+    // .../MarbleLuceFall.meta.js — the header block only, about 800 bytes, sent with CORS allowed
+    // and max-age=0. It is also exactly what Tampermonkey installs from, so the dot can no longer
+    // come before the install works. Up to 6.27 the source was a version.json in the GitHub repo:
+    // raw.githubusercontent.com caches for five minutes and, measured 24.09.2026, ignores the
+    // query string (x-cache HIT with a random one) — so the dot came 2 to 7 minutes after a
+    // release. That file is still written and stays the fallback if Greasy Fork cannot be reached.
     //
     // How often: every two minutes while the tab is visible, once more the moment it becomes
     // visible again (20 s apart at least), never while it is hidden. There is no waiting time on
@@ -12464,6 +12466,7 @@
     //
     // Our own fetch first, the page's as a fallback should the sandbox's ever be refused. Each
     // check leaves one line in the console, so a "no dot" can be read there.
+    const UPDATE_META_URL = 'https://update.greasyfork.org/scripts/595115/MarbleLuceFall.meta.js';
     const UPDATE_URL = 'https://raw.githubusercontent.com/CuteLuciii/marbleluce-fall/main/version.json';
     const INSTALL_URL = 'https://update.greasyfork.org/scripts/595115/MarbleLuceFall.user.js';
     const UPDATE_EVERY_MS = 2 * 60 * 1000;
@@ -12495,18 +12498,25 @@
 
     // Our fetch first, then the page's. Text, parsed here: a Response object handed across
     // from the page is best only asked for plain values.
+    // Greasy Fork first, GitHub as the fallback (see above); for each, our fetch and then the page's.
     async function readLatestVersion() {
-        const url = UPDATE_URL + '?t=' + Date.now();
+        const sources = [
+            { url: UPDATE_META_URL, read: t => ((/^\/\/\s*@version\s+(\S+)/m.exec(t) || [])[1] || '') },
+            { url: UPDATE_URL, read: t => String(JSON.parse(t).version || '') },
+        ];
         const pageFetch = typeof unsafeWindow !== 'undefined' && unsafeWindow && unsafeWindow.fetch;
         let lastError = null;
-        for (const f of [fetch, pageFetch]) {
-            if (typeof f !== 'function') continue;
-            try {
-                const res = await f.call(f === fetch ? window : unsafeWindow, url, { cache: 'no-store', credentials: 'omit' });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                const text = String(await res.text());
-                return String(JSON.parse(text).version || '').trim();
-            } catch (e) { lastError = e; }
+        for (const src of sources) {
+            for (const f of [fetch, pageFetch]) {
+                if (typeof f !== 'function') continue;
+                try {
+                    const res = await f.call(f === fetch ? window : unsafeWindow, src.url + '?t=' + Date.now(), { cache: 'no-store', credentials: 'omit' });
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    const v = String(src.read(String(await res.text()))).trim();
+                    if (v) return v;
+                    throw new Error('no version in ' + src.url);
+                } catch (e) { lastError = e; }
+            }
         }
         throw lastError || new Error('no fetch');
     }

@@ -29,7 +29,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 ## Good to know
 
 - Purchases always go through the game's own buttons — the script never buys anything by itself.
-- Everything it shows comes from the page or the game's own endpoints, with one exception: for the euro prices it fetches today's USD→EUR rate from frankfurter.dev (European Central Bank rates, no key, no data sent but the request itself) once a day. Switch the euro prices off and it asks no outside service at all.
+- Everything it shows comes from the page or the game's own endpoints, with two exceptions: the update notice asks Greasy Fork for this script's current version (every two minutes while the tab is visible, falling back to the GitHub repo), and the euro prices fetch today's USD→EUR rate from frankfurter.dev (European Central Bank rates) once a day. Neither sends anything but the request itself; switch off the euro prices and only the update check remains.
 - Every picture in the themes is drawn by the script itself — no logos, stills or fonts of the originals.
 
 The source lives on [GitHub](https://github.com/CuteLuciii/marbleluce-fall); updates arrive here automatically.
