@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.24
+// @version      6.24.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1363,7 +1363,9 @@
            whole board. With the option on, curtain and picture go, and a line of text takes their
            place. The overlay itself stays: its fade in, hold and fade out are the game's own, and
            the text simply rides along inside it. */
-        html[data-mcfo-tsbanner="1"] [data-role="tileset-transition-splash-overlay"] { background: transparent !important; }
+        /* The doubled attribute is for weight: a theme re-tints the curtain's inline colour with a
+           rule of its own (html[data-mcfo-theme] [data-mcfo-t~=...]) that would otherwise win. */
+        html[data-mcfo-tsbanner="1"] [data-role="tileset-transition-splash-overlay"][data-role] { background: transparent !important; }
         html[data-mcfo-tsbanner="1"] [data-role="tileset-transition-splash-image"] { display: none !important; }
         html:not([data-mcfo-tsbanner="1"]) .mcfo-tsbanner { display: none; }
         .mcfo-tsbanner {
@@ -2613,6 +2615,8 @@
     // instead of the fixed green — as Material 3 draws its switches in the primary colour. Knob
     // position and brightness still say on or off; only the hue follows the theme. The
     // strength follows the accent's, within bounds, so Graphite's switches are grey.
+    // The tileset banner (12b) takes the accent too: the name bright, the line above it paler,
+    // and a glow of the same hue behind the letters.
     function themeAccentCss(t) {
         if (!t) return '';
         const k = Math.min(1.4, Math.max(0.25, t.accent.k));
@@ -2624,6 +2628,8 @@
             `${S} .mcfo-seg button[aria-pressed="true"] { background: ${pressed}; }`,
             `${S}[data-mcfo-chatcos="1"] .mcf-chat__cosmetics-toggle[aria-pressed="true"] { background: ${deep} !important; border-color: ${edge} !important; color: ${text} !important; }`,
             `${S}[data-mcfo-chatcos="1"] .mcf-chat__cosmetics-toggle[aria-pressed="true"]::before { background-color: ${track}; }`,
+            `${S} .mcfo-tsbanner__name { color: ${c(0.84, 0.15)}; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 26px ${c(0.55, 0.16)}, 0 4px 22px rgba(0, 0, 0, 0.75); }`,
+            `${S} .mcfo-tsbanner__kicker { color: ${c(0.9, 0.06)}; }`,
         ].join('\n');
     }
 
@@ -9857,12 +9863,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.24';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.24.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.24.1', date: '2026-09-24', items: ['The tileset name now comes in the colour of your theme.', 'Fixed: with a theme on, the dark curtain behind the tileset name stayed.'] },
         { v: '6.24', date: '2026-09-24', items: ['New tileset, no more blackout: instead of the full-screen picture over a dark curtain, the name of the new tileset fades in over the board, and the game stays visible behind it. Switch it off under Header if you miss the picture.'] },
         { v: '6.23.1', date: '2026-09-23', items: ['The game\'s new arena help is hidden: no more tooltips on the Tickets, Points, Gold and Diamonds cards, no "Arena help" button in the footer, no "?" beside the bid buttons and no currency guide in the sound controls.'] },
         { v: '6.23', date: '2026-09-22', items: [
