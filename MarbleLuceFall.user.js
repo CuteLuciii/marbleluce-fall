@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.26.3
+// @version      6.26.4
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -9931,7 +9931,21 @@
         const b = board.getBoundingClientRect();
         if (!r.width || !b.width) return;
 
-        let offset = (b.left + b.width / 2) - (r.left + r.width / 2);
+        // Centred as the FOLDED rail. Unfolding then only grows it to the right, from the left
+        // edge it already had: centred at full width, the unfolded rail (over 900px with the extra
+        // chips) ran with its left end across the footer line — season, episode and both
+        // versions (reported at 1920x1080). What folding hides is exactly the big chips, so
+        // their share is taken off the width: each chip plus the gap in front of it.
+        let hidden = 0;
+        if (document.documentElement.getAttribute('data-mcfo-rail') === 'open') {
+            const bidRail = role('bid-rail');
+            const gap = bidRail ? parseFloat(getComputedStyle(bidRail).columnGap) || 0 : 0;
+            (bidRail ? bidRail.querySelectorAll(':scope > [data-mcfo-big="1"]') : []).forEach(chip => {
+                const w = chip.getBoundingClientRect().width;
+                if (w) hidden += w + gap;
+            });
+        }
+        let offset = (b.left + b.width / 2) - (r.left + (r.width - hidden) / 2);
 
         // Do not push it into the navigation. On narrow windows the two close in on each other;
         // then whatever space actually exists applies, and in case of doubt the rail stays put.
@@ -9947,25 +9961,6 @@
             if (c.width && n.width) {
                 const room = n.left - 20 - c.right;
                 if (offset > room) offset = Math.max(0, room);
-            }
-        }
-
-        // Nor over the footer line on the left. With the rail unfolded and the extra chips
-        // unlocked it is over 900px wide, and centred on the board with the chat open its left
-        // end ran across season, episode and both versions (reported at 1920x1080). There is
-        // room to the right before the navigation, so the rail moves over — as far as needed,
-        // never into the navigation.
-        const meta = settings.footerMeta ? document.querySelector('.mcfo-footermeta') : null;
-        const m = meta && meta.getBoundingClientRect();
-        if (m && m.width) {
-            const push = m.right + 16 - (r.left + offset);
-            if (push > 0) {
-                let room = Infinity;
-                if (chips && nav) {
-                    const c = chips.getBoundingClientRect(), n = nav.getBoundingClientRect();
-                    if (c.width && n.width) room = n.left - 20 - (c.right + offset);
-                }
-                offset += Math.max(0, Math.min(push, room));
             }
         }
 
@@ -10005,12 +10000,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.3';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.26.4';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.26.4', date: '2026-09-24', items: ['The folded ticket rail is centred on the board again. Unfolding it now only grows it to the right, so the footer line on the left stays readable.'] },
         { v: '6.26.3', date: '2026-09-24', items: ['With the ticket rail unfolded, the footer line (season, episode, MCF and MLF version) stays readable: on narrower screens like 1920x1080 the rail moves a little to the right instead of covering it.'] },
         { v: '6.26.2', date: '2026-09-24', items: ['The update notice shows up sooner: no extra waiting time after a new version is found, and a fresh check whenever you come back to the tab.'] },
         { v: '6.26.1', date: '2026-09-24', items: ['No changes: a release to try out the new update notice.'] },
