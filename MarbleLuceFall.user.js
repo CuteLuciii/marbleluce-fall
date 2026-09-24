@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.25
+// @version      6.25.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -244,7 +244,11 @@
               hint: 'Click the tileset card to see what comes next.',
               sub: { key: 'eventsHours', type: 'choice', label: 'Look ahead', def: 12, options: [[3, '3 hours'], [12, '12 hours']] } },
             { key: 'tilesetBanner', label: 'Tileset name instead of the splash picture',
-              hint: 'When a new tileset begins, its name fades in over the board instead of the full-screen picture, and the board stays visible behind it.' },
+              hint: 'When a new tileset begins, its name fades in over the board instead of the full-screen picture, and the board stays visible behind it.',
+              subs: [
+                { key: 'tilesetBannerSize', type: 'range', label: 'Size', min: 50, max: 250, step: 10, def: 100, unit: '%' },
+                { type: 'action', label: 'Preview', text: 'Show now', run: () => previewTilesetBanner() },
+              ] },
             { key: 'settingsButton', label: 'Settings button',
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
@@ -337,6 +341,7 @@
             settingDefaults[item.key] = def;
             settings[item.key] = stored[item.key] !== undefined ? !!stored[item.key] : def;
             for (const sub of itemSubs(item)) {
+                if (sub.type === 'action') continue;   // a button, nothing to store
                 settingDefaults[sub.key] = sub.def;
                 const v = Number(stored[sub.key]);
                 settings[sub.key] = sub.type === 'range'
@@ -1371,21 +1376,26 @@
         html[data-mcfo-tsbanner="1"] [data-role="tileset-transition-splash-image"] { display: none !important; }
         html:not([data-mcfo-tsbanner="1"]) .mcfo-tsbanner { display: none; }
         .mcfo-tsbanner {
-            display: grid; justify-items: center; gap: 6px;
+            display: grid; justify-items: center; gap: calc(10px * var(--mcfo-tsb-scale, 1));
             padding: 18px 42px 20px;
             border-radius: 14px;
             background: radial-gradient(ellipse at center, rgba(6, 9, 13, 0.62) 0%, rgba(6, 9, 13, 0.38) 55%, rgba(6, 9, 13, 0) 78%);
             text-align: center;
             pointer-events: none;
+            /* Wider than the game's 980px picture box, so a bigger size stays on one line. */
+            width: max-content; max-width: 92vw;
+            /* Placed on the overlay itself (absolute), not in the game's picture box: that box is
+               980px wide at most, and a wider banner in it would sit off-centre. */
+            position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
         }
         .mcfo-tsbanner__kicker {
-            font: 700 13px/1 system-ui, sans-serif;
-            letter-spacing: 0.32em; text-transform: uppercase;
+            font: 700 calc(20px * var(--mcfo-tsb-scale, 1)) / 1 system-ui, sans-serif;
+            letter-spacing: 0.3em; text-transform: uppercase;
             color: rgba(255, 255, 255, 0.72);
             text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8);
         }
         .mcfo-tsbanner__name {
-            font: 900 clamp(34px, 5.2vw, 72px)/1.05 "Helvetica Neue", "Arial Black", "Archivo Black", Helvetica, Arial, sans-serif;
+            font: 900 calc(84px * var(--mcfo-tsb-scale, 1)) / 1.05 "Helvetica Neue", "Arial Black", "Archivo Black", Helvetica, Arial, sans-serif;
             letter-spacing: 0.02em;
             color: #fff;
             text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35), 0 4px 22px rgba(0, 0, 0, 0.75);
@@ -6596,6 +6606,7 @@
         // The title bar a touch denser than the page, as before (0.82 over 0.78).
         root.setProperty('--mcfo-glass-head', Math.min(0.97, alpha + 0.04).toFixed(2));
         root.setProperty('--mcfo-drink-scale', (settings.drinkScale / 100).toFixed(2));
+        root.setProperty('--mcfo-tsb-scale', (settings.tilesetBannerSize / 100).toFixed(2));
     }
 
     const SHOP_TO_INVENTORY = {
@@ -9950,12 +9961,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.25';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.25.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.25.1', date: '2026-09-24', items: ['The tileset name is bigger, and its size is yours to pick: a slider under Header, next to the option.', 'A Show now button plays the tileset name right away, so you can judge it without waiting for the next tileset.'] },
         { v: '6.25', date: '2026-09-24', items: ['A tomato thrown at you now shows as one small line in the chat - who threw it and when - instead of the picture, which the game showed only some of the time. An x on the line dismisses it, like on Discord. Switch it off under Chat.'] },
         { v: '6.24.1', date: '2026-09-24', items: ['The tileset name now comes in the colour of your theme.', 'Fixed: with a theme on, the dark curtain behind the tileset name stayed.'] },
         { v: '6.24', date: '2026-09-24', items: ['New tileset, no more blackout: instead of the full-screen picture over a dark curtain, the name of the new tileset fades in over the board, and the game stays visible behind it. Switch it off under Header if you miss the picture.'] },
@@ -10436,7 +10448,7 @@
         // The game keeps its own sound (11c); only the player's own settings are ours (11e).
         if (section.render === 'sound') return ['musicPlayer', 'musicBar', 'musicShuffle', 'musicVolume'];
         const keys = [];
-        for (const item of sectionItems(section)) { keys.push(item.key); for (const sub of itemSubs(item)) keys.push(sub.key); }
+        for (const item of sectionItems(section)) { keys.push(item.key); for (const sub of itemSubs(item)) if (sub.key) keys.push(sub.key); }
         if (section.throne) keys.push('throneDrinkSet');
         return keys;
     }
@@ -11242,6 +11254,13 @@
             });
             show();
             row.append(range, val, reset);
+        } else if (sub.type === 'action') {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'mcfo-set__reset';
+            b.textContent = sub.text;
+            b.addEventListener('click', () => sub.run());
+            row.appendChild(b);
         } else if (sub.type === 'choice') {
             const seg = document.createElement('div');
             seg.className = 'mcfo-seg';
@@ -12191,6 +12210,37 @@
         if (shown) return tilesetName(shown);
         const slug = ((img.getAttribute('src') || '').match(/([^/]+)\.webp/) || [])[1] || '';
         return slug.split('-').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    // "Show now" in the settings, so the look can be judged without waiting for the next tileset.
+    // It plays the game's own overlay with the game's own timing (1 s in, 3 s held, 3 s out) and
+    // the current tileset's name. The settings window would cover the board, so it goes to the
+    // taskbar for the length of it and comes back afterwards. A real transition arriving meanwhile
+    // simply takes over the overlay.
+    let tsPreviewTimer = 0;
+    function previewTilesetBanner() {
+        buildTilesetBanner();
+        const img = role('tileset-transition-splash-image');
+        const overlay = role('tileset-transition-splash-overlay');
+        const banner = img && img.parentElement && img.parentElement.querySelector(':scope > .mcfo-tsbanner');
+        if (!overlay || !banner) return;   // not on the board page: nothing to show it on
+        banner.querySelector('.mcfo-tsbanner__name').textContent = tilesetName((role('current-tileset-name')?.textContent || '').trim()) || 'Base Set';
+        const parked = windows.has(SETTINGS_KEY) && !windows.get(SETTINGS_KEY).min;
+        if (parked) minimiseWindow(SETTINGS_KEY);
+        clearTimeout(tsPreviewTimer);
+        overlay.style.transition = 'opacity 1000ms ease';
+        overlay.style.visibility = 'visible';
+        overlay.style.opacity = '0';
+        void overlay.offsetWidth;
+        overlay.style.opacity = '1';
+        tsPreviewTimer = setTimeout(() => {
+            overlay.style.transition = 'opacity 3000ms ease';
+            overlay.style.opacity = '0';
+            tsPreviewTimer = setTimeout(() => {
+                overlay.style.visibility = 'hidden';
+                if (parked) restoreWindow(SETTINGS_KEY);
+            }, 3000);
+        }, 4000);
     }
 
     function buildTilesetBanner() {
