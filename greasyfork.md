@@ -11,7 +11,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
   - **Music:** Die Ärzte, Linkin Park, Kraftklub, Goethes Erben, Samsas Traum, Prinz Pi
 - **Pages as windows** — shop, inventory, profile, credits and more open as movable windows over the game, with a taskbar.
 - **Bidding** — unbid in one click, extra ticket chips, autobid with risk protection.
-- **King tile** — the king's name and toll right on the tile; attack when free (opt-in), also again and again until you are King.
+- **King tile** — the game's reign read-outs to your liking (pick the lines, text size, visibility), plus the toll the King has set; attack when free (opt-in), also again and again until you are King.
 - **Tileset name** — a new tileset is announced by its name over the board instead of a full-screen picture that blacks the game out.
 - **Beverage bar** — the beverages as a compact bar, as symbols or with names.
 - **On the throne** — opt-in: when you take the crown, the toll goes to your value and the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).

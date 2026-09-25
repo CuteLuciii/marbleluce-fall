@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.27.2
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, king name and toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
+// @version      6.28
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -253,9 +253,17 @@
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
         { title: 'Sound', blurb: 'Sound effects, and a music player over the game\'s whole soundtrack, with a bar for the page.', render: 'sound' },
-        { title: 'King tile', blurb: 'King name, toll and beverage buttons on the tile.', items: [
-            { key: 'kingName', label: 'King name', hint: 'Top left on the king tile.' },
-            { key: 'kingToll', label: 'Toll',      hint: 'Top right on the king tile.' },
+        { title: 'King tile', blurb: 'The reign read-outs, toll and beverage buttons on the tile.', items: [
+            // Since game v0.10.1 the tile carries its own read-outs in the top corners (name,
+            // reign, duration left; gold, tolls, challengers right). Our own name and toll fields
+            // sat on exactly those corners, so they now join the game's block instead: the name is
+            // the game's, the set toll becomes one more line on the right.
+            { key: 'kingCorner', label: 'Reign read-outs',
+              hint: 'The lines in the top corners of the king tile, plus the toll the King has set. Pick the lines below.',
+              subs: [
+                  { key: 'kingCornerSize',  type: 'range', label: 'Text size',  min: 60, max: 160, step: 5, def: 100, unit: '%' },
+                  { key: 'kingCornerAlpha', type: 'range', label: 'Visibility', min: 20, max: 100, step: 5, def: 100, unit: '%' },
+              ] },
             { key: 'tollInput', label: 'Type the toll',
               hint: 'On the throne: a field for 0 to 17, confirmed with Enter, instead of the Reduce and Increase buttons.' },
             { key: 'tollSlider', def: false, label: 'Toll slider',
@@ -271,7 +279,15 @@
             { key: 'attackAssist', def: false, label: 'Attack when free',
               hint: 'Opt-in. Replaces the attack button with one that also works while you are bidding or in a tile: it sends !unbid once, sits out a lava cooldown (your autobid keeps playing meanwhile), waits until your marble is free and then presses the game\'s own attack button. Click it again to cancel. If something bids for you automatically, it says so instead of waiting in vain. Try again until King: after a miss (a lava bubble, the wall holding) it starts over by itself until you sit on the throne. Every miss costs points, a lava pop takes the value of the bubble, so this can burn through a lot.',
               sub: { key: 'attackRetry', type: 'choice', label: 'After a miss', def: 0, options: [[0, 'Stop'], [1, 'Try again until King']] } },
-        ]},
+        ], grid: { title: 'Lines on the king tile', items: [
+            { key: 'kcName',     label: 'King name',             hint: 'top left' },
+            { key: 'kcReign',    label: 'Reign number',          hint: 'top left' },
+            { key: 'kcDuration', label: 'Reign duration',        hint: 'top left' },
+            { key: 'kcGold',     label: 'Gold this reign',       hint: 'top right' },
+            { key: 'kcTolls',    label: 'Points from tolls',     hint: 'top right' },
+            { key: 'kcThwarted', label: 'Challengers thwarted',  hint: 'top right' },
+            { key: 'kingToll',   label: 'Toll setting',          hint: 'top right, added by MarbleLuceFall' },
+        ] } },
         // 17 is TOLL_MAX of section 9c, which is declared further down and not reachable here.
         { title: 'On the throne', blurb: 'Toll and beverages, set by themselves the moment you take the crown.', throne: true, items: [
             { key: 'throneToll', def: false, label: 'Set the toll',
@@ -722,7 +738,10 @@
     }
 
     // Carried over from 3.7: whoever had the combined switch off gets both halves off.
-    if (stored.kingName === undefined && stored.kingOverlay === false) settings.kingName = settings.kingToll = false;
+    if (stored.kingName === undefined && stored.kingOverlay === false) settings.kingToll = false;
+    // 6.28: our own name field gave way to the game's. Whoever had hidden it keeps the name hidden.
+    if (stored.kcName === undefined && (stored.kingName === false || (stored.kingName === undefined && stored.kingOverlay === false)))
+        settings.kcName = false;
     if (stored.hideDailies === undefined && stored.tidyFooter === false) {
         for (const b of FOOTER_BUTTONS) settings[b.key] = false;
     }
@@ -846,6 +865,30 @@
         .mcfo-king-field .mcfo-name  { opacity: 0.9; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
         /* Older than two polls: draw it faint rather than assert a number that may have moved on. */
         .mcfo-king-field[data-mcfo-stale="1"] { opacity: 0.45; }
+
+        /* The game's own read-outs (v0.10.1, king-corner-labels): size and visibility from the
+           settings, single lines hidden by name. Sizes are the game's 16 px / 19 px scaled, so
+           100% is exactly the original. */
+        html[data-mcfo-kc] .mcf-king-corner-labels {
+            font-size: calc(16px * var(--mcfo-kc-scale, 1));
+            opacity: var(--mcfo-kc-alpha, 1);
+        }
+        /* Both columns are grids stretched to the taller one: with lines hidden on one side the
+           rest would spread out over the gap. Packed to the top instead. */
+        html[data-mcfo-kc] .mcf-king-corner-labels > div { align-content: start; }
+        html[data-mcfo-kc] .mcf-king-corner-labels .mcf-king-corner-labels__name {
+            font-size: calc(19px * var(--mcfo-kc-scale, 1));
+        }
+        html[data-mcfo-kc~="name"]     [data-role="king-corner-name"],
+        html[data-mcfo-kc~="reign"]    [data-role="king-corner-reign"],
+        html[data-mcfo-kc~="duration"] [data-role="king-corner-duration"],
+        html[data-mcfo-kc~="gold"]     [data-role="king-corner-gold"],
+        html[data-mcfo-kc~="tolls"]    [data-role="king-corner-tolls"],
+        html[data-mcfo-kc~="thwarted"] [data-role="king-corner-thwarted"] { display: none !important; }
+        html[data-mcfo-kc~="off"] .mcf-king-corner-labels { display: none !important; }
+        /* Our line inside the game's right column: same font, the value in the game's gold. */
+        .mcfo-kc-toll b { font-weight: 700; color: #f4d28b; }
+        .mcfo-kc-toll[data-mcfo-stale="1"] { opacity: 0.45; }
 
         /* === TIDY FOOTER ===
            Driven by an attribute on <html> so that switching a button back on brings it straight
@@ -6174,16 +6217,52 @@
         return el;
     }
 
+    // Which of the game's lines to hide, as words on <html> (CSS above). "off" hides the whole
+    // block. With the switch off entirely nothing is written and the game's look stays untouched.
+    const KING_CORNER_LINES = [['kcName', 'name'], ['kcReign', 'reign'], ['kcDuration', 'duration'],
+                               ['kcGold', 'gold'], ['kcTolls', 'tolls'], ['kcThwarted', 'thwarted']];
+    function writeKingCornerFlags() {
+        const html = document.documentElement;
+        if (!settings.kingCorner) { html.removeAttribute('data-mcfo-kc'); return; }
+        const hide = KING_CORNER_LINES.filter(([k]) => !settings[k]).map(([, w]) => w);
+        html.setAttribute('data-mcfo-kc', ['on', ...hide].join(' '));
+    }
+
+    // The set toll as one more line in the game's right column. The game rebuilds that block
+    // when the layout changes, so this runs every tick and simply puts the line back.
+    function drawTollLine(labels) {
+        const right = labels.querySelector('.mcf-king-corner-labels__right');
+        let line = labels.querySelector('.mcfo-kc-toll');
+        if (!right || !settings.kingCorner || !settings.kingToll || kingState.toll === null) { line?.remove(); return; }
+        if (!line || line.parentNode !== right) {
+            line?.remove();
+            line = document.createElement('span');
+            line.className = 'mcfo-kc-toll';
+            line.innerHTML = 'Toll: <b></b>';
+            right.appendChild(line);
+        }
+        const v = String(kingState.toll);
+        if (line.lastChild.textContent !== v) line.lastChild.textContent = v;
+        line.setAttribute('data-mcfo-stale', (Date.now() - kingState.at > KING_POLL_MS * 2) ? '1' : '0');
+    }
+
     function drawKingFields() {
         const anchor = kingAnchor();
         if (!anchor) return;
         const clear = () => anchor.querySelectorAll(':scope > .mcfo-king-field').forEach(e => e.remove());
 
-        if (!settings.kingName && !settings.kingToll) { clear(); return; }
+        // Since game v0.10.1: the game draws the read-outs itself, ours join them (see above).
+        const labels = document.querySelector('[data-role="king-corner-labels"]');
+        if (labels) { clear(); drawTollLine(labels); return; }
+
+        // Older builds without the game's block: our own two fields, as before 6.28.
+        const showName = settings.kingCorner && settings.kcName;
+        const showToll = settings.kingCorner && settings.kingToll;
+        if (!showName && !showToll) { clear(); return; }
         if (kingState.name === null && kingState.toll === null) { clear(); return; }
         // Name and toll have their own switches since 3.8; whichever is off loses its field.
-        if (!settings.kingName) anchor.querySelector(':scope > .mcfo-king-field--name')?.remove();
-        if (!settings.kingToll) anchor.querySelector(':scope > .mcfo-king-field--toll')?.remove();
+        if (!showName) anchor.querySelector(':scope > .mcfo-king-field--name')?.remove();
+        if (!showToll) anchor.querySelector(':scope > .mcfo-king-field--toll')?.remove();
 
         // Absolutely positioned inside the frame; were the frame static, the fields would stick
         // to the edge of the page instead.
@@ -6191,12 +6270,12 @@
 
         const stale = (Date.now() - kingState.at > KING_POLL_MS * 2) ? '1' : '0';
 
-        if (settings.kingName && kingState.name !== null) {
+        if (showName && kingState.name !== null) {
             const field = kingField(anchor, 'name');
             field.querySelector('.mcfo-name').textContent = kingState.name;
             field.setAttribute('data-mcfo-stale', stale);
         }
-        if (settings.kingToll && kingState.toll !== null) {
+        if (showToll && kingState.toll !== null) {
             const field = kingField(anchor, 'toll');
             field.querySelector('.mcfo-value').textContent = String(kingState.toll);
             field.setAttribute('data-mcfo-stale', stale);
@@ -6214,7 +6293,7 @@
     }
 
     async function pollKing() {
-        if (!settings.kingName && !settings.kingToll) return;
+        if (!settings.kingCorner || (!settings.kcName && !settings.kingToll)) return;
         try {
             const res = await fetch('/api/king/snapshot?view=summary', { credentials: 'include' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -6681,6 +6760,9 @@
         root.setProperty('--mcfo-glass-head', Math.min(0.97, alpha + 0.04).toFixed(2));
         root.setProperty('--mcfo-drink-scale', (settings.drinkScale / 100).toFixed(2));
         root.setProperty('--mcfo-tsb-scale', (settings.tilesetBannerSize / 100).toFixed(2));
+        root.setProperty('--mcfo-kc-scale', (settings.kingCornerSize / 100).toFixed(2));
+        root.setProperty('--mcfo-kc-alpha', (settings.kingCornerAlpha / 100).toFixed(2));
+        writeKingCornerFlags();
     }
 
     const SHOP_TO_INVENTORY = {
@@ -10055,12 +10137,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.27.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.28', date: '2026-09-25', items: [
+            'The king tile now shows the game\'s own reign read-outs (name, reign, duration, gold, tolls, challengers) - our separate name and toll fields sat right on top of them. The toll the King has set is now one more line in the game\'s block, in the same style.',
+            'Settings, King tile: pick which of those lines you want, and set their text size and visibility.',
+        ] },
         { v: '6.27.2', date: '2026-09-24', items: ['The Shop sign on the Gold card is back in its place — 6.27 had moved it down a little.'] },
         { v: '6.27.1', date: '2026-09-24', items: ['The update notice comes within about two minutes of a release instead of up to seven: the script now asks Greasy Fork itself, where the update is installed from, instead of a copy on GitHub that is cached for five minutes.'] },
         { v: '6.27', date: '2026-09-24', items: [
