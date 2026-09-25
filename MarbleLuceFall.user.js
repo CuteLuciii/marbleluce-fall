@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.28.1
+// @version      6.28.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -10137,12 +10137,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.28.2', date: '2026-09-25', items: ['Settings › On the throne: the warning about beverage costs now stands right above Pour beverages instead of above the toll switches.'] },
         { v: '6.28.1', date: '2026-09-25', items: ['Type the toll and Toll slider moved to Settings › On the throne, where the other toll settings are.'] },
         { v: '6.28', date: '2026-09-25', items: [
             'The king tile now shows the game\'s own reign read-outs (name, reign, duration, gold, tolls, challengers) - our separate name and toll fields sat right on top of them. The toll the King has set is now one more line in the game\'s block, in the same style.',
@@ -10735,10 +10736,19 @@
         } else if (section.render === 'sound') {
             box.appendChild(soundCard(() => renderSettings(body)));
         } else {
-            if (section.throne) box.appendChild(throneNotice());
-            const card = document.createElement('div');
+            // On the throne page the cost warning stands right above Pour beverages, not above the
+            // toll switches, which cost nothing: the items are split into two cards around it.
+            let card = document.createElement('div');
             card.className = 'mcfo-set__card';
-            for (const item of section.items) card.appendChild(settingItem(item));
+            for (const item of section.items) {
+                if (section.throne && item.key === 'throneDrinks') {
+                    if (card.children.length) box.appendChild(card);
+                    box.appendChild(throneNotice());
+                    card = document.createElement('div');
+                    card.className = 'mcfo-set__card';
+                }
+                card.appendChild(settingItem(item));
+            }
             box.appendChild(card);
             if (section.throne) box.appendChild(throneDrinksCard());
 
