@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.28.2
+// @version      6.28.3
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -515,7 +515,7 @@
         // account is signed in (section 3d, themeVisible).
         { id: 'sig-dreaming', group: 'Signature', owner: 'DreamingLucie', label: 'Dreaming', note: 'For DreamingLucie: a soft trans-pastel night', skin: 'dreaming',
           s: ['#2a1f4a', 1.6], l: ['#f5a9b8', 1.4], i: ['#f5a9b8', 0.6], a: ['#5bcefa', 1.3] },
-        { id: 'sig-bricks', group: 'Signature', owner: 'CuteLegoGirl', label: 'Brick Builder', note: 'For CuteLegoGirl: bricks and studs', skin: 'bricks',
+        { id: 'sig-bricks', group: 'Signature', owner: ['DreamingLegoGirl', 'CuteLegoGirl'], label: 'Brick Builder', note: 'For DreamingLegoGirl: bricks and studs', skin: 'bricks',
           s: [250, 0.25], l: ['#ffcd03', 1.4], a: ['#d01012', 1.3] },
         { id: 'sig-highroller', group: 'Signature', owner: 'NuceLoire', label: 'High Roller', note: 'For NuceLoire: felt, gold and chips', skin: 'casino',
           s: ['#0b5d2e', 1.3], l: ['#d4af37', 1.5], i: [90, 0.3], a: ['#d4af37', 1.4] },
@@ -3541,7 +3541,10 @@
     }
     function themeVisible(t) {
         if (!t || !t.owner) return true;
-        return (accountName() || '').toLowerCase() === t.owner.toLowerCase();
+        // owner may be a list: the game shows the live Twitch display name, so a renamed account
+        // keeps its old name here as well (CuteLegoGirl became DreamingLegoGirl on 2026-09-25).
+        const me = (accountName() || '').toLowerCase();
+        return [].concat(t.owner).some(o => String(o).toLowerCase() === me);
     }
 
     function kitCss(S, k) {
@@ -10137,12 +10140,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28.3';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.28.3', date: '2026-09-25', items: ['The Brick Builder signature theme follows CuteLegoGirl to her new name, DreamingLegoGirl.'] },
         { v: '6.28.2', date: '2026-09-25', items: ['Settings › On the throne: the warning about beverage costs now stands right above Pour beverages instead of above the toll switches.'] },
         { v: '6.28.1', date: '2026-09-25', items: ['Type the toll and Toll slider moved to Settings › On the throne, where the other toll settings are.'] },
         { v: '6.28', date: '2026-09-25', items: [
