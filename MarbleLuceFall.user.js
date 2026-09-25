@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.28.3
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
+// @version      6.29.0
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -431,6 +431,24 @@
     settings.autobidAmount = clampTickets(stored.autobidAmount);
     settingDefaults.autobidRisk = true;
     settings.autobidRisk = stored.autobidRisk !== false;
+    // 6.29: tile lists, as in the MarbleMind bot. With "Only known tiles" on (the default) a bid
+    // goes only onto a tile on the allowlist — a tile the game has just added is skipped until
+    // someone allows it by hand. The blocklist comes on top of the risk tiles. The starting
+    // allowlist is the bot's, every tile that has been played safely for weeks.
+    const AB_DEFAULT_ALLOW = ['Baby Deathball Jackpot', 'Big Bumper Minus', 'Big Bumper Plus', 'Big Bumper Plus v2',
+        'Bounce House', 'Deathball Jackpot', 'Deathball Rush', 'Deathball Rush v2', 'Deathball Rush v3',
+        'Deathball Rush v4', 'Deathball Rush v5', 'Diamond Drop', 'Downward Slope', 'Forked Frenzy', 'Forked Frenzy v2',
+        'Giant Bumper', 'Golden Rotation', 'Hexagonal', 'Hole in One', 'How Low Can You Go', 'Mini Bumper', 'No Gains',
+        'Not Stonks', 'Nouble or Dothing', 'Ouroboros', 'Pegboard Mania', 'Rhombic', 'Rise and Grind',
+        'Rise and Grind v2', 'Rise and Grind v3', 'Small Gains', 'Squarewise', 'Stonks', 'Upward Slope',
+        'Upward Slope v2', 'Upward Slope v3'];
+    const tileList = v => Array.isArray(v) ? v.filter(t => typeof t === 'string' && t.trim()).map(t => t.trim()) : null;
+    settingDefaults.autobidKnownOnly = true;
+    settings.autobidKnownOnly = stored.autobidKnownOnly !== false;
+    settingDefaults.autobidAllow = AB_DEFAULT_ALLOW;
+    settings.autobidAllow = tileList(stored.autobidAllow) || AB_DEFAULT_ALLOW.slice();   // a copy, never the defaults' array
+    settingDefaults.autobidBlock = [];
+    settings.autobidBlock = tileList(stored.autobidBlock) || [];
 
     // Colour themes (section 3b). Every role is [seed, strength]: the seed gives the hue — a number
     // in OKLCH degrees (the stock blue-grey sits at about 245) or simply a colour such as a flag
@@ -2094,6 +2112,26 @@
         .mcfo-auto__box[data-tone="alert"] { border-color: #8a4a4a; color: #ffd0d0; }
         .mcfo-auto__last { margin-top: 6px; font-size: 11.5px; color: #a9bac8; min-height: 14px; }
         .mcfo-auto__foot { margin-top: 8px; font-size: 11px; line-height: 1.35; color: #7f93a6; }
+        [data-mcfo-ab="tiles"] { border-top: 1px solid #16232f; }
+        [data-mcfo-ab="tiles"][hidden] { display: none; }
+        .mcfo-auto__new { border-color: #8a6d2a; }
+        .mcfo-auto__newhead { color: #ffe8b0; margin-bottom: 4px; }
+        .mcfo-auto__tile { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+        .mcfo-auto__tile > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mcfo-auto__tile i { font-style: normal; font-size: 10.5px; color: #8da2b7; }
+        /* .mcfo-menu button makes every button a full-width row; these sit beside a name. */
+        .mcfo-menu button.mcfo-auto__btn { display: inline-block; flex: none; width: auto; text-align: center;
+                          padding: 3px 8px; border: 1px solid #3d5568; border-radius: 5px; background: #142230; color: #dbe7f1;
+                          font: inherit; font-size: 11px; font-weight: 700; line-height: 1.3; cursor: pointer; }
+        .mcfo-menu button.mcfo-auto__btn:hover { border-color: #6d86a0; background: #1b2c3c; }
+        .mcfo-auto__lists { margin-top: 6px; font-size: 12px; }
+        .mcfo-auto__lists > summary { cursor: pointer; font-weight: 700; padding: 4px 2px; color: #cfdcea; }
+        .mcfo-auto__lists[open] [data-mcfo-ab="listbody"] { max-height: 200px; overflow-y: auto; padding-right: 4px; }
+        .mcfo-auto__add { display: flex; gap: 6px; margin: 4px 0 6px; }
+        .mcfo-auto__name { flex: 1; min-width: 0; padding: 4px 7px; border: 1px solid #3d5568; border-radius: 6px; background: #0e1821;
+                           color: #e6f0f7; font: inherit; font-size: 12px; }
+        .mcfo-auto__listhead { margin: 6px 0 2px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #8da2b7; }
+        .mcfo-auto__none { color: #6f8396; font-size: 11.5px; }
 
         /* === ENHANCED CHAT (opt-in, section 9f) ===
            Everything keyed on an attribute of <html> and limited to the real message list, so
@@ -8343,9 +8381,11 @@
     const AB_TAB_STALE_MS      = 15000;    // a bidding tab that has not checked in for this long has gone
     const AB_NOTE_MS           = 30000;    // how long a notice (leak, refusal) stays in view
     const AB_RISK_SCAN_MS      = 24 * 3600 * 1000;
+    const AB_RESCAN_MS         = 10 * 60 * 1000;   // a tile the catalogues did not list: look again, at most this often
     const AB_HIGH_KEY = 'mcfo_autobid_runs';
     const AB_TAB_KEY  = 'mcfo_autobid_tab';
     const AB_RISK_KEY = 'mcfo_tile_risk';
+    const AB_UNKNOWN_KEY = 'mcfo_autobid_unknown';
     const AB_RISK_NAMES = ['zero or hero', 'zero-or-hero', 'zeroorhero', 'chance time', 'double or nothing',
                            'jackball deathpot', 'v-risko', 'v risko', 'vrisko', 'super questionable financial decision'];
     const AB_CATALOGS = ['real', 'BaseSet', 'RiskyBusiness', 'SpeedRound', 'GrindStone', 'RarityStorm',
@@ -8362,6 +8402,7 @@
     let abRisk = null;
     let abMenu = null;
     let abRiskArmedUntil = 0;
+    let abRescanAt = 0;
 
     const normTile = s => String(s || '').trim().toLowerCase();
     const runPrefix = id => String(id || '').replace(/:\d+$/, '');
@@ -8406,7 +8447,7 @@
     function riskState() {
         if (abRisk) return abRisk;
         const c = readStore(AB_RISK_KEY);
-        abRisk = c && typeof c === 'object' ? { defs: c.defs || {}, tiles: c.tiles || {}, at: c.at || 0 } : { defs: {}, tiles: {}, at: 0 };
+        abRisk = c && typeof c === 'object' ? { defs: c.defs || {}, tiles: c.tiles || {}, names: c.names || {}, at: c.at || 0 } : { defs: {}, tiles: {}, names: {}, at: 0 };
         return abRisk;
     }
     function isRiskTile(tile) {
@@ -8414,6 +8455,52 @@
         if (!n) return false;
         if (AB_RISK_NAMES.some(f => n === f || n.includes(f))) return true;
         return riskState().tiles[n] === true;
+    }
+
+    // ---- allowlist and blocklist (6.29) ----
+    const inList = (list, tile) => { const n = normTile(tile); return !!n && list.some(t => normTile(t) === n); };
+    const isBlockedTile = tile => isRiskTile(tile) || inList(settings.autobidBlock, tile);
+    const isAllowedTile = tile => inList(settings.autobidAllow, tile);
+    // Why a tile gets no bid, or '' when it may have one. Only asked with risk protection on.
+    function tileVeto(tile) {
+        if (isRiskTile(tile)) return 'risk';
+        if (inList(settings.autobidBlock, tile)) return 'blocked';
+        if (settings.autobidKnownOnly && !isAllowedTile(tile)) return 'unknown';
+        return '';
+    }
+    const vetoWords = { risk: 'a risk tile', blocked: 'on your blocklist', unknown: 'not on your allowlist yet' };
+
+    // Tiles on neither list, as they turn up in a lane or in the catalogues: the menu offers
+    // them for a decision. Kept across a reload, dropped once decided.
+    function unknownTiles() {
+        const u = readStore(AB_UNKNOWN_KEY);
+        return u && typeof u === 'object' ? u : {};
+    }
+    function noteUnknown(tile, where) {
+        const n = normTile(tile);
+        if (!n || isBlockedTile(tile) || isAllowedTile(tile)) return;
+        const u = unknownTiles();
+        if (u[n] && (u[n].where === 'lane' || where !== 'lane')) return;
+        u[n] = { name: String(tile).trim(), where, at: Date.now() };
+        writeStore(AB_UNKNOWN_KEY, u);
+        if (abMenu && abMenu.isConnected) syncAutobidMenu(abMenu);
+    }
+    function forgetUnknown(tile) {
+        const u = unknownTiles(), n = normTile(tile);
+        if (u[n]) { delete u[n]; writeStore(AB_UNKNOWN_KEY, u); }
+    }
+    function setTileList(tile, which) {
+        const name = String(tile || '').trim();
+        if (!name) return;
+        const n = normTile(name);
+        settings.autobidAllow = settings.autobidAllow.filter(t => normTile(t) !== n);
+        settings.autobidBlock = settings.autobidBlock.filter(t => normTile(t) !== n);
+        if (which === 'allow') settings.autobidAllow.push(name);
+        if (which === 'block') settings.autobidBlock.push(name);
+        if (which) forgetUnknown(name);
+        else noteUnknown(name, 'list');           // taken off a list: undecided again
+        saveSettings();
+        autobidTick();
     }
 
     // The bot's refreshTileRisk, in the browser. Every catalogue lists its tiles with a specHash
@@ -8439,6 +8526,7 @@
                     const tile = normTile(row && row.tileId);
                     const hash = String((row && row.specHash) || '').trim();
                     if (!tile || !hash || !row.definitionRef) continue;
+                    risk.names[tile] = String(row.tileId).trim();
                     if (risk.defs[hash] === undefined) {
                         try {
                             const res = await fetch('/' + String(row.definitionRef).replace(/^\//, ''));
@@ -8453,6 +8541,7 @@
             }
             if (read) risk.at = Date.now();
             writeStore(AB_RISK_KEY, risk);
+            for (const name of Object.values(risk.names)) noteUnknown(name, 'catalogue');
         } finally { ab.scanning = false; }
     }
 
@@ -8499,8 +8588,18 @@
         const risk = settings.autobidRisk;
         if (risk && !ab.scanning && now - riskState().at > AB_RISK_SCAN_MS) scanRiskCatalogs();
         if (risk) {
+            for (const [, l] of lanes) {
+                if (!l.tile) continue;
+                noteUnknown(l.tile, 'lane');
+                // A name the catalogues have never listed is new in the game — perhaps a new
+                // risk tile. Look it up now rather than at the next daily scan (6.29: until then a
+                // new risk tile went through unnoticed for up to a day).
+                if (!riskState().names[normTile(l.tile)] && !ab.scanning && now > abRescanAt) { abRescanAt = now + AB_RESCAN_MS; scanRiskCatalogs(); }
+            }
+            // Holding back also for a tile we do not know: the server may put the bid there.
             for (const [k, l] of lanes) {
-                if (l.open && isRiskTile(l.tile)) return abSet('hold', `Holding: ${l.tile} is taking bids (${laneName(k)} lane), a bid now could land there.`);
+                const veto = l.open ? tileVeto(l.tile) : '';
+                if (veto) return abSet('hold', `Holding: ${l.tile} (${vetoWords[veto]}) is taking bids in the ${laneName(k)} lane, a bid now could land there.`);
             }
             const stale = untrustedLane(now);
             if (stale) return abSet('hold', `Holding: the ${laneName(stale)} lane has shown the same run for over 4 minutes, its view may be out of date.`);
@@ -8510,13 +8609,13 @@
         const candidates = [];
         for (const [k, l] of lanes) {
             if (l.phase !== 'TILE_REVEALED' || !l.open || !l.runId) continue;
-            if (risk && (now < (ab.riskLock[k] || 0) || isRiskTile(l.tile))) { skipped = l; continue; }
+            if (risk && (now < (ab.riskLock[k] || 0) || tileVeto(l.tile))) { skipped = l; continue; }
             if (alreadyBid(k, l.runId)) { done = l; continue; }
             candidates.push([k, l]);
         }
         if (!candidates.length) {
             return abSet('on', done ? `Bid on ${done.tile}. Waiting for the next tile.`
-                             : skipped ? `Skipping ${skipped.tile}: a risk tile.`
+                             : skipped ? `Skipping ${skipped.tile}: ${vetoWords[tileVeto(skipped.tile)] || 'a risk tile'}.`
                              : 'On. Waiting for the next bidding window.');
         }
 
@@ -8568,7 +8667,7 @@
                 ab.bids += 1;
                 ab.lastBid = { tile: landedTile || lane.tile, amount, at: Date.now() };
                 if (landedTile && normTile(landedTile) !== normTile(lane.tile)) {
-                    if (settings.autobidRisk && isRiskTile(landedTile)) takeBack(landedTile, landedLane, lane.tile);
+                    if (settings.autobidRisk && tileVeto(landedTile)) takeBack(landedTile, landedLane, lane.tile);
                     else abNote('hold', `The server put this bid on ${landedTile}, not ${lane.tile}.`);
                 }
             })
@@ -8639,6 +8738,18 @@
                 + '<label class="mcfo-auto__row"><span class="mcfo-auto__label">Risk protection</span>'
                 +   '<input type="checkbox" class="mcfo-switch__input" data-mcfo-ab="risk"><span class="mcfo-switch" aria-hidden="true"></span></label>'
                 + '<div class="mcfo-auto__hint" data-mcfo-ab="riskhint"></div>'
+                + '<div data-mcfo-ab="tiles">'
+                +   '<label class="mcfo-auto__row"><span class="mcfo-auto__label">Only known tiles</span>'
+                +     '<input type="checkbox" class="mcfo-switch__input" data-mcfo-ab="known"><span class="mcfo-switch" aria-hidden="true"></span></label>'
+                +   '<div class="mcfo-auto__hint" data-mcfo-ab="knownhint"></div>'
+                +   '<div class="mcfo-auto__box mcfo-auto__new" data-mcfo-ab="unknown" hidden></div>'
+                +   '<details class="mcfo-auto__lists" data-mcfo-ab="lists"><summary data-mcfo-ab="listsum"></summary>'
+                +     '<div class="mcfo-auto__add"><input type="text" class="mcfo-auto__name" data-mcfo-ab="name" placeholder="Tile name" spellcheck="false">'
+                +       '<button type="button" class="mcfo-auto__btn" data-mcfo-add="allow">Allow</button>'
+                +       '<button type="button" class="mcfo-auto__btn" data-mcfo-add="block">Block</button></div>'
+                +     '<div data-mcfo-ab="listbody"></div>'
+                +   '</details>'
+                + '</div>'
                 + '<div class="mcfo-auto__box" data-mcfo-ab="status"></div>'
                 + '<div class="mcfo-auto__box" data-mcfo-ab="note" hidden></div>'
                 + '<div class="mcfo-auto__last" data-mcfo-ab="last"></div>'
@@ -8696,6 +8807,24 @@
                 saveSettings();
                 autobidTick();
             });
+
+            q('known').addEventListener('change', e => {
+                settings.autobidKnownOnly = e.target.checked;
+                saveSettings();
+                autobidTick();
+            });
+            // One listener for every Allow / Block / Remove button, the lists are redrawn often.
+            m.addEventListener('click', e => {
+                const b = e.target.closest('[data-mcfo-tile-act]');
+                if (b) { setTileList(b.getAttribute('data-mcfo-tile'), b.getAttribute('data-mcfo-tile-act')); return; }
+                const add = e.target.closest('[data-mcfo-add]');
+                if (add) { const f = q('name'); setTileList(f.value, add.getAttribute('data-mcfo-add')); f.value = ''; }
+            });
+            q('name').addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); setTileList(e.target.value, 'allow'); e.target.value = ''; }
+            });
+            // The menu grows when the lists open — place it again so it stays on screen.
+            q('lists').addEventListener('toggle', () => placePanel(anchor, m));
         }, { centre: true });
         abMenu = menu || null;
         if (!menu) return;          // a second click on the button closed it
@@ -8721,6 +8850,37 @@
                  : settings.autobidRisk ? 'Skips the risk tiles (Zero or Hero and the others that can set your points to zero), holds back while one is taking bids, and takes a bid back with !unbid if the server puts it there anyway.'
                  : 'Off: bids on every tile, risk tiles included.');
         tone(hint, armed || !settings.autobidRisk ? 'warn' : '');
+
+        // Tile lists, only with risk protection: without it every tile gets a bid anyway.
+        q('tiles').hidden = !settings.autobidRisk;
+        const known = q('known');
+        if (known.checked !== settings.autobidKnownOnly) known.checked = settings.autobidKnownOnly;
+        put(q('knownhint'), settings.autobidKnownOnly
+            ? 'Bids only on tiles on your allowlist. A tile the game has just added gets no bid until you allow it.'
+            : 'Off: bids on every tile that is not a risk tile or on your blocklist, new tiles included.');
+        const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+        const btn = (tile, act, text) => `<button type="button" class="mcfo-auto__btn" data-mcfo-tile-act="${act}" data-mcfo-tile="${esc(tile)}">${text}</button>`;
+        const redraw = (el, html) => { if (el._mcfoHtml !== html) { el._mcfoHtml = html; el.innerHTML = html; } };
+
+        const unknown = Object.values(unknownTiles()).sort((a, b) => (a.where === 'lane' ? 0 : 1) - (b.where === 'lane' ? 0 : 1) || b.at - a.at);
+        const ubox = q('unknown');
+        ubox.hidden = !unknown.length;
+        redraw(ubox, unknown.length
+            ? '<div class="mcfo-auto__newhead">New tiles, not bid on until you decide:</div>'
+              + unknown.map(u => `<div class="mcfo-auto__tile"><span title="${u.where === 'lane' ? 'seen in a lane' : u.where === 'catalogue' ? 'listed in the game\'s tile catalogue' : 'taken off a list'}">${esc(u.name)}${u.where === 'catalogue' ? ' <i>catalogue</i>' : ''}</span>`
+                  + btn(u.name, 'allow', 'Allow') + btn(u.name, 'block', 'Block') + '</div>').join('')
+            : '');
+
+        const risky = Object.keys(riskState().tiles).filter(t => riskState().tiles[t]).map(t => riskState().names[t] || t);
+        put(q('listsum'), `Tile lists: ${settings.autobidAllow.length} allowed, ${settings.autobidBlock.length + risky.length} blocked`);
+        const sorted = list => list.slice().sort((a, b) => a.localeCompare(b));
+        redraw(q('listbody'),
+            '<div class="mcfo-auto__listhead">Allowed</div>'
+            + (sorted(settings.autobidAllow).map(t => `<div class="mcfo-auto__tile"><span>${esc(t)}</span>${btn(t, '', 'Remove')}</div>`).join('') || '<div class="mcfo-auto__none">none</div>')
+            + '<div class="mcfo-auto__listhead">Blocked</div>'
+            + sorted(settings.autobidBlock).map(t => `<div class="mcfo-auto__tile"><span>${esc(t)}</span>${btn(t, '', 'Remove')}</div>`).join('')
+            + sorted(risky).map(t => `<div class="mcfo-auto__tile"><span>${esc(t)} <i>risk tile</i></span></div>`).join('')
+            + (settings.autobidBlock.length || risky.length ? '' : '<div class="mcfo-auto__none">none</div>'));
 
         const status = q('status');
         put(status, settings.autobidOn ? ab.text : 'Off. Switch it on above.');
@@ -10140,12 +10300,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28.3';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.29.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.29.0', date: '2026-09-26', items: [
+            'Autobid has tile lists, like the MarbleMind bot: with Only known tiles on (the default) it bids only on tiles on your allowlist. A tile the game has just added gets no bid, and autobid holds back while one is taking bids.',
+            'New tiles show up in the autobid menu with Allow and Block. Under Tile lists you can add or remove any tile yourself.',
+            'A tile that is not in the game\'s catalogue yet is looked up again within minutes instead of the next day, so a new risk tile is caught much sooner.',
+        ] },
         { v: '6.28.3', date: '2026-09-25', items: ['The Brick Builder signature theme follows CuteLegoGirl to her new name, DreamingLegoGirl.'] },
         { v: '6.28.2', date: '2026-09-25', items: ['Settings › On the throne: the warning about beverage costs now stands right above Pour beverages instead of above the toll switches.'] },
         { v: '6.28.1', date: '2026-09-25', items: ['Type the toll and Toll slider moved to Settings › On the throne, where the other toll settings are.'] },

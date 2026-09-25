@@ -10,7 +10,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
   - **Books:** The Lost Bookshop (Der verschwundene Buchladen), Reading Nook
   - **Music:** Die Ärzte, Linkin Park, Kraftklub, Goethes Erben, Samsas Traum, Prinz Pi
 - **Pages as windows** — shop, inventory, profile, credits and more open as movable windows over the game, with a taskbar.
-- **Bidding** — unbid in one click, extra ticket chips, autobid with risk protection.
+- **Bidding** — unbid in one click, extra ticket chips, autobid with risk protection and an allow- and blocklist for tiles (new tiles get no bid until you allow them).
 - **King tile** — the game's reign read-outs to your liking (pick the lines, text size, visibility), plus the toll the King has set; attack when free (opt-in), also again and again until you are King.
 - **Tileset name** — a new tileset is announced by its name over the board instead of a full-screen picture that blacks the game out.
 - **Beverage bar** — the beverages as a compact bar, as symbols or with names.
