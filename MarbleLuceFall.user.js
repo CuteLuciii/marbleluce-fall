@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.28
+// @version      6.28.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -253,7 +253,7 @@
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
         { title: 'Sound', blurb: 'Sound effects, and a music player over the game\'s whole soundtrack, with a bar for the page.', render: 'sound' },
-        { title: 'King tile', blurb: 'The reign read-outs, toll and beverage buttons on the tile.', items: [
+        { title: 'King tile', blurb: 'The reign read-outs and the beverage buttons on the tile.', items: [
             // Since game v0.10.1 the tile carries its own read-outs in the top corners (name,
             // reign, duration left; gold, tolls, challengers right). Our own name and toll fields
             // sat on exactly those corners, so they now join the game's block instead: the name is
@@ -264,10 +264,6 @@
                   { key: 'kingCornerSize',  type: 'range', label: 'Text size',  min: 60, max: 160, step: 5, def: 100, unit: '%' },
                   { key: 'kingCornerAlpha', type: 'range', label: 'Visibility', min: 20, max: 100, step: 5, def: 100, unit: '%' },
               ] },
-            { key: 'tollInput', label: 'Type the toll',
-              hint: 'On the throne: a field for 0 to 17, confirmed with Enter, instead of the Reduce and Increase buttons.' },
-            { key: 'tollSlider', def: false, label: 'Toll slider',
-              hint: 'Adds a slider next to the field. Needs the field above.' },
             { key: 'kingTray', label: 'Beverage buttons',
               hint: 'Water and Lava left of the attack button, Milk and Acid right of it. As symbols they take the look of your theme; the name shows when you point at one.',
               subs: [
@@ -289,7 +285,11 @@
             { key: 'kingToll',   label: 'Toll setting',          hint: 'top right, added by MarbleLuceFall' },
         ] } },
         // 17 is TOLL_MAX of section 9c, which is declared further down and not reachable here.
-        { title: 'On the throne', blurb: 'Toll and beverages, set by themselves the moment you take the crown.', throne: true, items: [
+        { title: 'On the throne', blurb: 'Typing the toll, and toll and beverages set by themselves the moment you take the crown.', throne: true, items: [
+            { key: 'tollInput', label: 'Type the toll',
+              hint: 'On the throne: a field for 0 to 17, confirmed with Enter, instead of the Reduce and Increase buttons.' },
+            { key: 'tollSlider', def: false, label: 'Toll slider',
+              hint: 'Adds a slider next to the field. Needs the field above.' },
             { key: 'throneToll', def: false, label: 'Set the toll',
               hint: 'Opt-in. The moment you take the crown, the toll goes to this value, through the game\'s own Reduce and Increase buttons. Whatever you change later in the reign stays as you set it.',
               sub: { key: 'throneTollValue', type: 'range', label: 'Toll', min: 0, max: 17, step: 1, def: 0, unit: '' } },
@@ -10137,12 +10137,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.28.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.28.1', date: '2026-09-25', items: ['Type the toll and Toll slider moved to Settings › On the throne, where the other toll settings are.'] },
         { v: '6.28', date: '2026-09-25', items: [
             'The king tile now shows the game\'s own reign read-outs (name, reign, duration, gold, tolls, challengers) - our separate name and toll fields sat right on top of them. The toll the King has set is now one more line in the game\'s block, in the same style.',
             'Settings, King tile: pick which of those lines you want, and set their text size and visibility.',
@@ -10392,7 +10393,7 @@
                 'Autobid bids on every tile for you: click it, switch it on, pick 1 to 100 tickets and choose risk protection. It pauses while you are King.',
             ] },
             { title: 'King tile', items: [
-                'King name and toll stand on the tile; the beverage buttons sit left and right of the attack button. A beverage panel stays open after a purchase, so several can be bought in a row.',
+                'The game\'s reign read-outs stand on the tile, with the toll the King has set as an extra line; pick the lines in Settings. The beverage buttons sit left and right of the attack button. A beverage panel stays open after a purchase, so several can be bought in a row.',
                 'On the throne you can type the toll instead of clicking it up and down.',
                 'Attack when free (opt-in in Settings) waits until your marble is free and attacks for you. Set to try again, it starts over after every miss until you are King.',
                 'On the throne (opt-in in Settings) sets your toll and pours the beverages you picked by itself when you take the crown, once per reign. Beverages spend gold or diamonds for good.',
