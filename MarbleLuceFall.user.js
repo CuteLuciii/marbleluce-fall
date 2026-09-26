@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.30.0
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
+// @version      6.31.0
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -253,6 +253,7 @@
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
         { title: 'Sound', blurb: 'Sound effects, and a music player over the game\'s whole soundtrack, with a bar for the page.', render: 'sound' },
+        { title: 'Loadouts', blurb: 'Save what you wear, put it back on with one click, swap codes with the Discord bot.', render: 'loadouts' },
         { title: 'King tile', blurb: 'The reign read-outs and the beverage buttons on the tile.', items: [
             // Since game v0.10.1 the tile carries its own read-outs in the top corners (name,
             // reign, duration left; gold, tolls, challengers right). Our own name and toll fields
@@ -2019,6 +2020,44 @@
         .mcfo-set__notice {
             margin: 0 0 10px; padding: 10px 12px; border-radius: 9px;
             border: 1px solid #6f5a28; background: rgba(60, 45, 12, 0.35); color: #ffe3a3; font-size: 12px;
+        }
+
+        /* === LOADOUTS (section 12e) === the settings page. Button rules hang on .mcfo-set (3.11 lesson). */
+        .mcfo-lo { padding: 12px 14px; }
+        .mcfo-lo + .mcfo-lo, .mcfo-lo__status { margin-top: 10px; }
+        .mcfo-lo__title { font-weight: 700; color: #e6f0f7; font-size: 13.5px; margin-bottom: 8px; }
+        .mcfo-lo__hint, .mcfo-lo__what, .mcfo-lo__empty { font-size: 12px; color: #9ab0c0; }
+        .mcfo-lo__hint { margin-top: 8px; }
+        .mcfo-lo__line { display: flex; gap: 8px; align-items: center; }
+        .mcfo-set .mcfo-lo input, .mcfo-set .mcfo-lo textarea {
+            flex: 1; min-width: 0; box-sizing: border-box; border: 1px solid #2c4254; border-radius: 7px;
+            background: #0b1620; color: #e6f0f7; font: inherit; font-size: 12.5px; padding: 7px 9px;
+        }
+        .mcfo-set .mcfo-lo textarea { width: 100%; resize: vertical; margin-bottom: 8px; font-family: ui-monospace, monospace; font-size: 11.5px; word-break: break-all; }
+        .mcfo-set .mcfo-lo button {
+            border: 1px solid #2c4254; border-radius: 7px; background: #111f2b; color: #cfe2f2; white-space: nowrap;
+            font: inherit; font-size: 12px; font-weight: 700; line-height: 1; padding: 7px 10px; cursor: pointer;
+        }
+        .mcfo-set .mcfo-lo button:hover:not(:disabled) { background: #16283a; border-color: #4d7ea6; color: #fff; }
+        .mcfo-set .mcfo-lo button:disabled { opacity: 0.5; cursor: default; }
+        .mcfo-set .mcfo-lo button[data-sure] { border-color: #a0503c; color: #ffb4a0; }
+        .mcfo-lo__row { display: flex; gap: 10px; align-items: center; padding: 8px 0; }
+        .mcfo-lo__row + .mcfo-lo__row { border-top: 1px solid #192a38; }
+        .mcfo-lo__info { flex: 1; min-width: 0; }
+        .mcfo-lo__name { font-weight: 700; color: #e6f0f7; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mcfo-lo__what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mcfo-lo__btns { display: flex; gap: 5px; flex-shrink: 0; }
+        .mcfo-lo__status { padding: 10px 12px; border-radius: 9px; font-size: 12px; border: 1px solid #2c5a3e; background: rgba(16, 52, 32, 0.35); color: #c8f0d6; }
+        .mcfo-lo__status[data-tone=warn] { border-color: #6f5a28; background: rgba(60, 45, 12, 0.35); color: #ffe3a3; }
+        .mcfo-lo__status[data-tone=error] { border-color: #7a3a2c; background: rgba(70, 20, 12, 0.35); color: #ffc2b2; }
+        .mcfo-lo__status ul { margin: 6px 0 0; padding-left: 18px; }
+        .mcfo-lo__status li.mcfo-lo__same { opacity: 0.6; }
+        .mcfo-lo__status li.mcfo-lo__warn { color: #ffe3a3; }
+        .mcfo-lo__status li.mcfo-lo__err { color: #ffb4a0; }
+        .mcfo-lo__status code { font-size: 11.5px; }
+        .mcfo-set .mcfo-lo__status textarea {
+            display: block; width: 100%; box-sizing: border-box; margin-top: 7px; resize: vertical; word-break: break-all;
+            border: 1px solid #2c4254; border-radius: 7px; background: #0b1620; color: #e6f0f7; font: 11.5px ui-monospace, monospace; padding: 7px 9px;
         }
 
         /* === ON THE THRONE (section 7c) === the beverage picker in the settings, and the note
@@ -10460,12 +10499,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.30.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.31.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.31.0', date: '2026-09-27', items: [
+            'Loadouts: a new page in the settings saves what you wear under a name (crown with its random pool, chat colour normal and as King, chat background, username style, King bubble, marble trail and border) and puts it back on with one click.',
+            'Only what differs is changed. An item you no longer have is skipped and named, never swapped for one of the same name. An open Inventory window reloads to show the new picks.',
+            'Copy code turns a loadout into a code, and Import takes one: swap loadouts with the MarbleMind Discord bot or keep a copy. A code only works on the account it came from.',
+        ] },
         { v: '6.30.0', date: '2026-09-26', items: [
             'Royal Celebrations: while you are King, the Rebellion button turns into Royal Celebration and sits right beside the toll, like Rebellion beside the ticket chips. Only the King sees it.',
             'It opens a panel with all eight tiers (x2 to x10, 5 to 50 tiles, 500 to 12,500 diamonds), the celebration that is running and your balance. Like Rebellion, a tier needs a second click to confirm, and it is the game\'s own Start that buys.',
@@ -11029,6 +11073,10 @@
             return { text: `Effects ${s.sfx ? 'on' : 'off'} \u00b7 ${musicText}`,
                      none: !s.sfx && !s.music && !settings.musicPlayer };
         }
+        if (section.render === 'loadouts') {
+            const n = Object.keys(loMine()).length;
+            return lo.player ? { text: n ? n + ' saved' : 'None saved yet', none: !n } : { text: 'Open to see yours', none: true };
+        }
         const items = sectionItems(section);
         const on = items.filter(i => settings[i.key] && (!i.needs || settings[i.needs])).length;
         return { text: `${on} of ${items.length} on`, none: on === 0 };
@@ -11039,6 +11087,7 @@
         if (section.render === 'performance') return ['perfLevel', 'perfFpsMeter', ...PERF_LEVERS.map(l => l.key)];
         // The game keeps its own sound (11c); only the player's own settings are ours (11e).
         if (section.render === 'sound') return ['musicPlayer', 'musicBar', 'musicShuffle', 'musicVolume'];
+        if (section.render === 'loadouts') return [];   // the loadouts are data, not settings: never reset
         const keys = [];
         for (const item of sectionItems(section)) { keys.push(item.key); for (const sub of itemSubs(item)) if (sub.key) keys.push(sub.key); }
         if (section.throne) keys.push('throneDrinkSet');
@@ -11069,6 +11118,9 @@
             box.appendChild(themeCard(() => renderSettings(body)));
         } else if (section.render === 'sound') {
             box.appendChild(soundCard(() => renderSettings(body)));
+        } else if (section.render === 'loadouts') {
+            box.appendChild(loadoutsCard(() => renderSettings(body)));
+            return;   // no "Reset this page": nothing here is a setting
         } else {
             // On the throne page the cost warning stands right above Pour beverages, not above the
             // toll switches, which cost nothing: the items are split into two cards around it.
@@ -13317,6 +13369,340 @@
         });
         // The shop opened as a page of its own, not in a window.
         shopDocAssist(document);
+    }
+
+    // =========================================================================================
+    // 12e. LOADOUTS: WHAT YOU WEAR, SAVED AND PUT BACK ON (6.31)
+    // =========================================================================================
+    // Every slot of the inventory works the same way in the game's own pages (inventory.js,
+    // marbleTrails/ and marbleBorders/inventoryPage.js): GET reads the choice, POST .../selected
+    // equips. Crowns, trails and borders add a random mode and a pool (random-pool/<id>, POST in,
+    // DELETE out, at most 10). A loadout stores the exact item, by inventoryItemId: two items of
+    // the same name need not look alike. An item that is gone is skipped, never swapped for a
+    // namesake.
+    // The code is shared with the MarbleMind Discord bot: "MLF-LOADOUT-1:" + base64url(JSON),
+    // { v: 1, name, player, slots: { <slot>: { sel, selName, random?, pool? } } }. Base64 because
+    // phone keyboards turn straight quotes into curly ones and raw JSON would arrive broken.
+    // The slot keys below are the bot's; change both sides together.
+    const LO_STORE = 'mcfo_loadouts';     // { <playerId>: { <name, lower case>: { name, savedAt, player, slots } } }
+    const LO_PREFIX = 'MLF-LOADOUT-1:';
+    const loBlank = id => !id || String(id).startsWith('system_no_chat_treatment:');
+    const loMarble = (label, base) => ({
+        label, source: base, random: true,
+        read: d => { const e = d.equipment || {};
+                     return { items: d.items || [], sel: e.selectedInventoryItemId ?? e.inventoryItemId ?? null,
+                              random: !!e.randomEnabled, pool: e.poolItemIds || [] }; },
+        pick: id => [base + '/selected', { inventoryItemId: id || null }],
+        poolPath: id => base + '/random-pool/' + encodeURIComponent(id),
+        randomPath: base + '/random-enabled',
+    });
+    const loChat = (label, slotType) => ({
+        label, source: '/api/inventory/chat-cosmetics?slotType=' + slotType,
+        read: d => ({ items: d.availableItems || [], sel: loBlank(d.selectedInventoryItemId) ? null : d.selectedInventoryItemId }),
+        pick: id => ['/api/inventory/chat-cosmetics/selected', { slotType, inventoryItemId: id || null }],
+    });
+    const LO_SLOTS = {
+        krone: { label: 'Crown', source: '/api/inventory/crowns', random: true,
+                 read: d => ({ items: d.availableCrownItems || [], sel: d.selectedInventoryItemId || 'system_no_crown',
+                               random: !!d.randomEnabled, pool: d.randomPoolInventoryItemIds || [] }),
+                 pick: id => ['/api/inventory/crowns/selected', { inventoryItemId: id || 'system_no_crown' }],
+                 poolPath: id => '/api/inventory/crowns/random-pool/' + encodeURIComponent(id),
+                 randomPath: '/api/inventory/crowns/random-enabled' },
+        farbe: { label: 'Chat colour', source: '/api/inventory/chat-font-colors',
+                 read: d => { const v = d.ordinarySelectedInventoryItemId ?? d.selectedInventoryItemId;
+                              return { items: d.availableItems || [], sel: loBlank(v) ? null : v }; },
+                 pick: id => ['/api/inventory/chat-font-colors/ordinary-selected', { inventoryItemId: id || null }] },
+        farbeKing: { label: 'Chat colour as King', source: '/api/inventory/chat-font-colors',
+                 read: d => ({ items: d.availableItems || [], sel: loBlank(d.kingSelectedInventoryItemId) ? null : d.kingSelectedInventoryItemId }),
+                 pick: id => ['/api/inventory/chat-font-colors/king-selected', { inventoryItemId: id || null }] },
+        chat:   loChat('Chat background', 'chat_background_style'),
+        namen:  loChat('Username style', 'username_style'),
+        blase:  loChat('King chat bubble', 'king_chat_bubble_style'),
+        trail:  loMarble('Marble trail', '/api/inventory/marble-trails'),
+        border: loMarble('Marble border', '/api/inventory/marble-borders'),
+    };
+    const lo = { player: null, busy: false, status: '', draft: { name: '', code: '', as: '' } };   // drafts survive the redraws
+
+    function loAll() {
+        try { return JSON.parse(localStorage.getItem(LO_STORE) || '{}') || {}; } catch (e) { return {}; }
+    }
+    function loMine() { return (lo.player && loAll()[lo.player]) || {}; }
+    function loPut(key, value) {
+        const all = loAll();
+        const mine = all[lo.player] || (all[lo.player] = {});
+        if (value) mine[key] = value; else delete mine[key];
+        try { localStorage.setItem(LO_STORE, JSON.stringify(all)); } catch (e) { /* storage full or blocked */ }
+    }
+    function loItemName(items, id) {
+        if (!id) return 'Default';
+        const it = items.find(i => String(i.inventoryItemId) === String(id));
+        return (it && (it.displayName || it.definitionId)) || '?';
+    }
+    async function loFetch(path, method, body) {
+        const r = await fetch(path, {
+            method: method || 'GET', credentials: 'include',
+            headers: body ? { 'Content-Type': 'application/json', Accept: 'application/json' } : { Accept: 'application/json' },
+            body: body ? JSON.stringify(body) : undefined,
+        });
+        let data = null;
+        try { data = await r.json(); } catch (e) { /* not JSON */ }
+        return { ok: r.ok && !(data && data.ok === false), status: r.status, data };
+    }
+    // One request per source: the chat colour serves two slots.
+    async function loState() {
+        const cache = new Map(), out = {};
+        for (const [key, s] of Object.entries(LO_SLOTS)) {
+            if (!cache.has(s.source)) cache.set(s.source, await loFetch(s.source).catch(e => ({ ok: false, status: 0, data: null, err: e.message })));
+            const r = cache.get(s.source);
+            out[key] = r.ok && r.data ? s.read(r.data) : { error: (r.data && r.data.error) || r.err || 'HTTP ' + r.status };
+            const pid = r.data && (r.data.playerId || (r.data.player && r.data.player.playerId));
+            if (pid && !lo.player) lo.player = String(pid);
+        }
+        return out;
+    }
+    async function loSave(name) {
+        const state = await loState();
+        if (!lo.player) throw new Error('Not signed in.');
+        const slots = {}, failed = [];
+        for (const [key, st] of Object.entries(state)) {
+            if (st.error) { failed.push(LO_SLOTS[key].label); continue; }
+            slots[key] = { sel: st.sel ?? null, selName: loItemName(st.items, st.sel) };
+            if (LO_SLOTS[key].random) Object.assign(slots[key], { random: st.random, pool: st.pool, poolNames: st.pool.map(id => loItemName(st.items, id)) });
+        }
+        // Nothing readable, nothing saved: a server hiccup must not overwrite a good loadout.
+        if (!Object.keys(slots).length) throw new Error('The inventory did not answer.');
+        loPut(name.toLowerCase(), { name, savedAt: Date.now(), player: lo.player, slots });
+        return failed;
+    }
+    // Only what differs is sent. Per slot: pool first (out before in, the pool holds ten), then
+    // the pick, random on or off last, so the end state is the saved one whatever the game pulls
+    // along. With random saved the pick is left alone: the game draws it anew every run.
+    async function loLoad(saved) {
+        const state = await loState();
+        const lines = [];
+        let changed = 0;
+        for (const [key, want] of Object.entries(saved.slots || {})) {
+            const s = LO_SLOTS[key], have = state[key];
+            if (!s) continue;
+            if (!have || have.error) { lines.push(['warn', s.label + ': could not be read']); continue; }
+            const there = new Set(have.items.map(i => String(i.inventoryItemId)));
+            const steps = [], missing = [];
+            if (s.random && want.random !== undefined) {
+                const pool = (want.pool || []).filter(id => there.has(String(id)));
+                missing.push(...(want.pool || []).filter(id => !there.has(String(id))));
+                const havePool = new Set(have.pool.map(String));
+                for (const id of have.pool) if (!pool.includes(id)) steps.push([s.poolPath(id), {}, 'DELETE']);
+                for (const id of pool) if (!havePool.has(String(id))) steps.push([s.poolPath(id), {}, 'POST']);
+            }
+            if ((!s.random || !want.random) && String(want.sel ?? '') !== String(have.sel ?? '')) {
+                if (want.sel && !there.has(String(want.sel))) missing.push(want.sel);
+                else steps.push([...s.pick(want.sel), 'POST']);
+            }
+            if (s.random && want.random !== undefined && !!want.random !== !!have.random) steps.push([s.randomPath, { enabled: !!want.random }, 'POST']);
+            const gone = missing.length ? ` (${missing.length} item${missing.length > 1 ? 's' : ''} no longer in your inventory)` : '';
+            if (!steps.length) { lines.push([missing.length ? 'warn' : 'same', loSlotText(key, want) + gone]); continue; }
+            let failed = null;
+            for (const [path, body, method] of steps) {
+                const r = await loFetch(path, method, body).catch(e => ({ ok: false, status: 0, data: null, err: e.message }));
+                if (!r.ok) { failed = (r.data && r.data.error) || r.err || 'HTTP ' + r.status; break; }
+            }
+            if (failed) lines.push(['error', s.label + ': ' + failed]);
+            else { changed++; lines.push([missing.length ? 'warn' : 'done', loSlotText(key, want) + gone]); }
+        }
+        if (changed) loRefreshInventory();
+        return { lines, changed };
+    }
+    function loSlotText(key, v) {
+        const label = (LO_SLOTS[key] && LO_SLOTS[key].label) || key;
+        if (v.random) return `${label}: random from ${(v.pool || []).length}`;
+        return `${label}: ${v.selName || 'Default'}`;
+    }
+    // An open Inventory window still shows the old picks: it is simply loaded again.
+    function loRefreshInventory() {
+        const w = windows.get('/inventory');
+        try { if (w && w.frame && w.frame.contentWindow) w.frame.contentWindow.location.reload(); } catch (e) { /* not there yet */ }
+    }
+    function loB64(text) {
+        const bytes = new TextEncoder().encode(text);
+        let bin = '';
+        for (const b of bytes) bin += String.fromCharCode(b);
+        return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+    function loUnB64(text) {
+        let t = text.replace(/-/g, '+').replace(/_/g, '/');
+        while (t.length % 4) t += '=';
+        return new TextDecoder().decode(Uint8Array.from(atob(t), c => c.charCodeAt(0)));
+    }
+    function loCode(saved) {
+        const slots = {};
+        for (const [k, v] of Object.entries(saved.slots || {})) {
+            slots[k] = { sel: v.sel ?? null, selName: v.selName || null };
+            if (v.random !== undefined) Object.assign(slots[k], { random: !!v.random, pool: v.pool || [] });
+        }
+        return LO_PREFIX + loB64(JSON.stringify({ v: 1, name: saved.name, player: saved.player || null, slots }));
+    }
+    // Takes the code with code-block fences, spaces or line breaks around it, as Discord hands it over.
+    function loReadCode(text) {
+        const m = String(text || '').replace(/\s+/g, '').match(/MLF-LOADOUT-1:([A-Za-z0-9_\-+/=]+)/);
+        if (!m) throw new Error('That is not a loadout code (it starts with MLF-LOADOUT-1:).');
+        let j;
+        try { j = JSON.parse(loUnB64(m[1])); } catch (e) { throw new Error('The code is incomplete or damaged.'); }
+        if (!j || j.v !== 1 || !j.slots || typeof j.slots !== 'object') throw new Error('Unknown code version.');
+        const slots = {};
+        for (const [k, v] of Object.entries(j.slots)) {
+            if (!LO_SLOTS[k] || !v || typeof v !== 'object') continue;
+            slots[k] = { sel: v.sel == null ? null : String(v.sel), selName: v.selName ? String(v.selName).slice(0, 80) : null };
+            if (LO_SLOTS[k].random && v.random !== undefined) {
+                slots[k].random = !!v.random;
+                slots[k].pool = Array.isArray(v.pool) ? v.pool.slice(0, 10).map(String) : [];
+            }
+        }
+        if (!Object.keys(slots).length) throw new Error('The code holds no known slot.');
+        return { name: String(j.name || '').trim().slice(0, 40), player: j.player ? String(j.player) : null, slots };
+    }
+    // Checked against this account's inventory: a code from another player is refused (the item
+    // ids exist once), names are filled in, missing items counted but kept - one may come back.
+    async function loImport(code, name) {
+        const state = await loState();
+        if (!lo.player) throw new Error('Not signed in.');
+        if (code.player && code.player !== lo.player) throw new Error('This code belongs to another player account. Items always belong to exactly one account.');
+        let missing = 0;
+        for (const [k, v] of Object.entries(code.slots)) {
+            const have = state[k];
+            if (!have || have.error) continue;
+            const there = new Set(have.items.map(i => String(i.inventoryItemId)));
+            if (v.sel && !there.has(v.sel)) missing++;
+            const known = loItemName(have.items, v.sel);
+            v.selName = v.sel ? (known !== '?' ? known : (v.selName || '?')) : 'Default';
+            if (v.pool) { v.poolNames = v.pool.map(id => loItemName(have.items, id)); missing += v.pool.filter(id => !there.has(id)).length; }
+        }
+        loPut(name.toLowerCase(), { name, savedAt: Date.now(), player: lo.player, slots: code.slots });
+        return missing;
+    }
+    async function loCopy(text) {
+        try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back below */ }
+        const t = document.createElement('textarea');
+        t.value = text; t.style.cssText = 'position:fixed;left:-9999px;top:0';
+        document.body.appendChild(t); t.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { /* nothing */ }
+        t.remove();
+        return ok;
+    }
+
+    // The settings page. Everything happens in place; the list is drawn again after each step.
+    function loadoutsCard(redraw) {
+        const wrap = document.createElement('div');
+        const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+        const say = (html, tone) => { lo.status = html ? `<div class="mcfo-lo__status" data-tone="${tone || ''}">${html}</div>` : ''; redraw(); };
+        const run = async (job) => {
+            if (lo.busy) return;
+            lo.busy = true; redraw();
+            try { await job(); } catch (e) { say(esc(e.message || e), 'error'); }
+            lo.busy = false; redraw();
+        };
+
+        if (!lo.player) {
+            const card = document.createElement('div');
+            card.className = 'mcfo-set__card mcfo-lo';
+            card.innerHTML = '<div class="mcfo-lo__empty">Reading your inventory \u2026</div>';
+            wrap.appendChild(card);
+            loState().then(() => { if (lo.player) redraw(); else { card.firstChild.textContent = 'Sign in to use loadouts.'; } })
+                     .catch(() => { card.firstChild.textContent = 'The inventory did not answer. Open this page again in a moment.'; });
+            return wrap;
+        }
+
+        const save = document.createElement('div');
+        save.className = 'mcfo-set__card mcfo-lo mcfo-lo__save';
+        save.innerHTML = '<div class="mcfo-lo__title">Save what you wear now</div>'
+            + '<div class="mcfo-lo__line"><input type="text" maxlength="40" placeholder="Name, e.g. King night"><button type="button">Save</button></div>'
+            + '<div class="mcfo-lo__hint">Crown with its random pool, chat colour (normal and as King), chat background, username style, King bubble, marble trail and border. A loadout of the same name is replaced.</div>';
+        const nameIn = save.querySelector('input'), saveBtn = save.querySelector('button');
+        saveBtn.disabled = lo.busy;
+        nameIn.value = lo.draft.name;
+        nameIn.addEventListener('input', () => { lo.draft.name = nameIn.value; });
+        const doSave = () => {
+            const name = nameIn.value.trim();
+            if (!name) { nameIn.focus(); return; }
+            run(async () => {
+                const failed = await loSave(name);
+                lo.draft.name = '';
+                say(`Saved <b>${esc(name)}</b>.` + (failed.length ? ` Not readable just now: ${esc(failed.join(', '))}.` : ''), failed.length ? 'warn' : 'done');
+            });
+        };
+        saveBtn.addEventListener('click', doSave);
+        nameIn.addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
+        wrap.appendChild(save);
+
+        if (lo.status) { const st = document.createElement('div'); st.innerHTML = lo.status; wrap.appendChild(st.firstChild); }
+
+        const list = Object.values(loMine()).sort((a, b) => a.name.localeCompare(b.name));
+        const sub = document.createElement('div');
+        sub.className = 'mcfo-set__sub-title';
+        sub.textContent = list.length ? `Saved loadouts (${list.length})` : 'Saved loadouts';
+        wrap.appendChild(sub);
+        const card = document.createElement('div');
+        card.className = 'mcfo-set__card mcfo-lo';
+        if (!list.length) card.innerHTML = '<div class="mcfo-lo__empty">None yet. Save one above, or paste a code below.</div>';
+        for (const l of list) {
+            const row = document.createElement('div');
+            row.className = 'mcfo-lo__row';
+            const what = ['krone', 'trail', 'border'].filter(k => l.slots[k]).map(k => loSlotText(k, l.slots[k])).join(' \u00b7 ');
+            row.innerHTML = '<div class="mcfo-lo__info"><div class="mcfo-lo__name"></div><div class="mcfo-lo__what"></div></div>'
+                + '<div class="mcfo-lo__btns"><button type="button" data-a="load">Put on</button><button type="button" data-a="code">Copy code</button><button type="button" data-a="del">Delete</button></div>';
+            row.querySelector('.mcfo-lo__name').textContent = l.name;
+            row.querySelector('.mcfo-lo__what').textContent = new Date(l.savedAt).toLocaleDateString() + (what ? ' \u00b7 ' + what : '');
+            row.title = Object.entries(l.slots).map(([k, v]) => loSlotText(k, v)).join('\n');
+            for (const b of row.querySelectorAll('button')) b.disabled = lo.busy;
+            row.querySelector('[data-a=load]').addEventListener('click', () => run(async () => {
+                const r = await loLoad(l);
+                const marks = { done: 'mcfo-lo__ok', same: 'mcfo-lo__same', warn: 'mcfo-lo__warn', error: 'mcfo-lo__err' };
+                const bad = r.lines.some(([t]) => t === 'warn' || t === 'error');
+                say(`<b>${esc(l.name)}</b> put on, ${r.changed} slot${r.changed === 1 ? '' : 's'} changed.<ul>`
+                    + r.lines.map(([t, x]) => `<li class="${marks[t]}">${esc(x)}</li>`).join('') + '</ul>', bad ? 'warn' : 'done');
+            }));
+            row.querySelector('[data-a=code]').addEventListener('click', async () => {
+                const code = loCode(l);
+                const ok = await loCopy(code);
+                // Blocked clipboard: the code is shown, selected, to be copied by hand.
+                say(ok ? `Code for <b>${esc(l.name)}</b> copied. In Discord: <code>/loadout import</code> and paste it into <i>code</i>.`
+                       : `The browser blocked copying. Copy the code for <b>${esc(l.name)}</b> by hand:<textarea readonly rows="3">${esc(code)}</textarea>`, ok ? 'done' : 'warn');
+                const shown = !ok && document.querySelector('.mcfo-lo__status textarea');
+                if (shown) { shown.focus(); shown.select(); }
+            });
+            // Two clicks to delete: the first only asks.
+            const del = row.querySelector('[data-a=del]');
+            del.addEventListener('click', () => {
+                if (del.dataset.sure) { loPut(l.name.toLowerCase(), null); say(`Deleted <b>${esc(l.name)}</b>.`, 'done'); return; }
+                del.dataset.sure = '1'; del.textContent = 'Sure?';
+                setTimeout(() => { if (del.isConnected) { delete del.dataset.sure; del.textContent = 'Delete'; } }, 4000);
+            });
+            card.appendChild(row);
+        }
+        wrap.appendChild(card);
+
+        const imp = document.createElement('div');
+        imp.className = 'mcfo-set__sub-title';
+        imp.textContent = 'Import a code';
+        const ic = document.createElement('div');
+        ic.className = 'mcfo-set__card mcfo-lo';
+        ic.innerHTML = '<textarea rows="3" placeholder="MLF-LOADOUT-1:\u2026 (from Copy code, or from /loadout export in Discord)"></textarea>'
+            + '<div class="mcfo-lo__line"><input type="text" maxlength="40" placeholder="Save as (empty: the name in the code)"><button type="button">Import</button></div>';
+        const codeIn = ic.querySelector('textarea'), asIn = ic.querySelector('input'), impBtn = ic.querySelector('button');
+        impBtn.disabled = lo.busy;
+        codeIn.value = lo.draft.code; asIn.value = lo.draft.as;
+        codeIn.addEventListener('input', () => { lo.draft.code = codeIn.value; });
+        asIn.addEventListener('input', () => { lo.draft.as = asIn.value; });
+        impBtn.addEventListener('click', () => run(async () => {
+            const code = loReadCode(codeIn.value);
+            const name = asIn.value.trim() || code.name;
+            if (!name) throw new Error('The code has no name: type one into Save as.');
+            const missing = await loImport(code, name);
+            lo.draft.code = ''; lo.draft.as = '';
+            say(`Imported <b>${esc(name)}</b>.` + (missing ? ` ${missing} item${missing > 1 ? 's are' : ' is'} not in your inventory right now; those slots stay as they are when you put it on.` : ''), missing ? 'warn' : 'done');
+        }));
+        wrap.append(imp, ic);
+        return wrap;
     }
 
     // =========================================================================================
