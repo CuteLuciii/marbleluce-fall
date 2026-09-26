@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.31.0
+// @version      6.32.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -253,7 +253,6 @@
               hint: 'A gear top right in place of the game\'s sound button: one click to these settings. The sound controls are on the Sound page.' },
         ]},
         { title: 'Sound', blurb: 'Sound effects, and a music player over the game\'s whole soundtrack, with a bar for the page.', render: 'sound' },
-        { title: 'Loadouts', blurb: 'Save what you wear, put it back on with one click, swap codes with the Discord bot.', render: 'loadouts' },
         { title: 'King tile', blurb: 'The reign read-outs and the beverage buttons on the tile.', items: [
             // Since game v0.10.1 the tile carries its own read-outs in the top corners (name,
             // reign, duration left; gold, tolls, challengers right). Our own name and toll fields
@@ -2020,44 +2019,6 @@
         .mcfo-set__notice {
             margin: 0 0 10px; padding: 10px 12px; border-radius: 9px;
             border: 1px solid #6f5a28; background: rgba(60, 45, 12, 0.35); color: #ffe3a3; font-size: 12px;
-        }
-
-        /* === LOADOUTS (section 12e) === the settings page. Button rules hang on .mcfo-set (3.11 lesson). */
-        .mcfo-lo { padding: 12px 14px; }
-        .mcfo-lo + .mcfo-lo, .mcfo-lo__status { margin-top: 10px; }
-        .mcfo-lo__title { font-weight: 700; color: #e6f0f7; font-size: 13.5px; margin-bottom: 8px; }
-        .mcfo-lo__hint, .mcfo-lo__what, .mcfo-lo__empty { font-size: 12px; color: #9ab0c0; }
-        .mcfo-lo__hint { margin-top: 8px; }
-        .mcfo-lo__line { display: flex; gap: 8px; align-items: center; }
-        .mcfo-set .mcfo-lo input, .mcfo-set .mcfo-lo textarea {
-            flex: 1; min-width: 0; box-sizing: border-box; border: 1px solid #2c4254; border-radius: 7px;
-            background: #0b1620; color: #e6f0f7; font: inherit; font-size: 12.5px; padding: 7px 9px;
-        }
-        .mcfo-set .mcfo-lo textarea { width: 100%; resize: vertical; margin-bottom: 8px; font-family: ui-monospace, monospace; font-size: 11.5px; word-break: break-all; }
-        .mcfo-set .mcfo-lo button {
-            border: 1px solid #2c4254; border-radius: 7px; background: #111f2b; color: #cfe2f2; white-space: nowrap;
-            font: inherit; font-size: 12px; font-weight: 700; line-height: 1; padding: 7px 10px; cursor: pointer;
-        }
-        .mcfo-set .mcfo-lo button:hover:not(:disabled) { background: #16283a; border-color: #4d7ea6; color: #fff; }
-        .mcfo-set .mcfo-lo button:disabled { opacity: 0.5; cursor: default; }
-        .mcfo-set .mcfo-lo button[data-sure] { border-color: #a0503c; color: #ffb4a0; }
-        .mcfo-lo__row { display: flex; gap: 10px; align-items: center; padding: 8px 0; }
-        .mcfo-lo__row + .mcfo-lo__row { border-top: 1px solid #192a38; }
-        .mcfo-lo__info { flex: 1; min-width: 0; }
-        .mcfo-lo__name { font-weight: 700; color: #e6f0f7; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .mcfo-lo__what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .mcfo-lo__btns { display: flex; gap: 5px; flex-shrink: 0; }
-        .mcfo-lo__status { padding: 10px 12px; border-radius: 9px; font-size: 12px; border: 1px solid #2c5a3e; background: rgba(16, 52, 32, 0.35); color: #c8f0d6; }
-        .mcfo-lo__status[data-tone=warn] { border-color: #6f5a28; background: rgba(60, 45, 12, 0.35); color: #ffe3a3; }
-        .mcfo-lo__status[data-tone=error] { border-color: #7a3a2c; background: rgba(70, 20, 12, 0.35); color: #ffc2b2; }
-        .mcfo-lo__status ul { margin: 6px 0 0; padding-left: 18px; }
-        .mcfo-lo__status li.mcfo-lo__same { opacity: 0.6; }
-        .mcfo-lo__status li.mcfo-lo__warn { color: #ffe3a3; }
-        .mcfo-lo__status li.mcfo-lo__err { color: #ffb4a0; }
-        .mcfo-lo__status code { font-size: 11.5px; }
-        .mcfo-set .mcfo-lo__status textarea {
-            display: block; width: 100%; box-sizing: border-box; margin-top: 7px; resize: vertical; word-break: break-all;
-            border: 1px solid #2c4254; border-radius: 7px; background: #0b1620; color: #e6f0f7; font: 11.5px ui-monospace, monospace; padding: 7px 9px;
         }
 
         /* === ON THE THRONE (section 7c) === the beverage picker in the settings, and the note
@@ -6700,6 +6661,7 @@
                 framePanelMode(frame); armStripeHandoff(frame); applyGlassToFrames(); laedt.remove();
                 themeFrame(frame);      // the page inside takes the theme as well (section 3b)
                 try { shopDocAssist(frame.contentDocument); } catch (e) {}   // quest tags, euros (12d)
+                try { invDocAssist(frame.contentDocument); } catch (e) {}    // loadout bar (12e)
             } finally {
                 frame.setAttribute('data-mcfo-ready', '1');
             }
@@ -10499,12 +10461,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.31.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.32.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.32.0', date: '2026-09-27', items: [
+            'Loadouts moved into the inventory: a bar at the top of Inventory \u203a Loadouts with your saved loadouts (Put on, Copy code, Delete), Save what I wear and Import. The page in the settings is gone.',
+            'New loadout: click it and every item card gets + Loadout (crowns, trails and borders also + Pool, chat colours + Chat and + As King). Nothing is equipped while you build; your picks show as chips at the top, across all inventory pages, and a click on a chip takes it out.',
+            'Save names the loadout. Slots you left out are listed first: they stay as they are when you put the loadout on, so a loadout can be just a trail and a border. After saving the picks are cleared for the next one.',
+        ] },
         { v: '6.31.0', date: '2026-09-27', items: [
             'Loadouts: a new page in the settings saves what you wear under a name (crown with its random pool, chat colour normal and as King, chat background, username style, King bubble, marble trail and border) and puts it back on with one click.',
             'Only what differs is changed. An item you no longer have is skipped and named, never swapped for one of the same name. An open Inventory window reloads to show the new picks.',
@@ -10842,7 +10809,22 @@
     // they become a link that opens exactly there. Matched against SETTINGS_SECTIONS, so a
     // renamed page simply stops being a link instead of pointing into nothing, and old entries
     // get their links without being rewritten.
+    // "Inventory \u203a Loadouts" in a text opens the inventory, where the loadout bar sits (6.32).
     function linkSettings(el, text) {
+        const parts = String(text).split('Inventory \u203a Loadouts');
+        parts.forEach((part, i) => {
+            if (i) {
+                const a = document.createElement('a');
+                a.className = 'mcfo-doc__link';
+                a.href = '#';
+                a.textContent = 'Inventory \u203a Loadouts';
+                a.addEventListener('click', e => { e.preventDefault(); openPage('/inventory', 'Inventory'); });
+                el.appendChild(a);
+            }
+            linkSettingsOnly(el, part);
+        });
+    }
+    function linkSettingsOnly(el, text) {
         const titles = SETTINGS_SECTIONS.map(x => x.title).sort((a, b) => b.length - a.length);
         let rest = String(text), m;
         const sep = /^(\s*[›,]\s*|\s+under\s+)/;
@@ -11073,10 +11055,6 @@
             return { text: `Effects ${s.sfx ? 'on' : 'off'} \u00b7 ${musicText}`,
                      none: !s.sfx && !s.music && !settings.musicPlayer };
         }
-        if (section.render === 'loadouts') {
-            const n = Object.keys(loMine()).length;
-            return lo.player ? { text: n ? n + ' saved' : 'None saved yet', none: !n } : { text: 'Open to see yours', none: true };
-        }
         const items = sectionItems(section);
         const on = items.filter(i => settings[i.key] && (!i.needs || settings[i.needs])).length;
         return { text: `${on} of ${items.length} on`, none: on === 0 };
@@ -11087,7 +11065,6 @@
         if (section.render === 'performance') return ['perfLevel', 'perfFpsMeter', ...PERF_LEVERS.map(l => l.key)];
         // The game keeps its own sound (11c); only the player's own settings are ours (11e).
         if (section.render === 'sound') return ['musicPlayer', 'musicBar', 'musicShuffle', 'musicVolume'];
-        if (section.render === 'loadouts') return [];   // the loadouts are data, not settings: never reset
         const keys = [];
         for (const item of sectionItems(section)) { keys.push(item.key); for (const sub of itemSubs(item)) if (sub.key) keys.push(sub.key); }
         if (section.throne) keys.push('throneDrinkSet');
@@ -11118,9 +11095,6 @@
             box.appendChild(themeCard(() => renderSettings(body)));
         } else if (section.render === 'sound') {
             box.appendChild(soundCard(() => renderSettings(body)));
-        } else if (section.render === 'loadouts') {
-            box.appendChild(loadoutsCard(() => renderSettings(body)));
-            return;   // no "Reset this page": nothing here is a setting
         } else {
             // On the throne page the cost warning stands right above Pour beverages, not above the
             // toll switches, which cost nothing: the items are split into two cards around it.
@@ -13369,6 +13343,7 @@
         });
         // The shop opened as a page of its own, not in a window.
         shopDocAssist(document);
+        invDocAssist(document);   // the inventory opened as a page of its own (12e)
     }
 
     // =========================================================================================
@@ -13487,9 +13462,9 @@
             if (!have || have.error) { lines.push(['warn', s.label + ': could not be read']); continue; }
             const there = new Set(have.items.map(i => String(i.inventoryItemId)));
             const steps = [], missing = [];
-            if (s.random && want.random !== undefined) {
-                const pool = (want.pool || []).filter(id => there.has(String(id)));
-                missing.push(...(want.pool || []).filter(id => !there.has(String(id))));
+            if (s.random && Array.isArray(want.pool)) {
+                const pool = want.pool.filter(id => there.has(String(id)));
+                missing.push(...want.pool.filter(id => !there.has(String(id))));
                 const havePool = new Set(have.pool.map(String));
                 for (const id of have.pool) if (!pool.includes(id)) steps.push([s.poolPath(id), {}, 'DELETE']);
                 for (const id of pool) if (!havePool.has(String(id))) steps.push([s.poolPath(id), {}, 'POST']);
@@ -13520,7 +13495,10 @@
     // An open Inventory window still shows the old picks: it is simply loaded again.
     function loRefreshInventory() {
         const w = windows.get('/inventory');
-        try { if (w && w.frame && w.frame.contentWindow) w.frame.contentWindow.location.reload(); } catch (e) { /* not there yet */ }
+        try {
+            if (w && w.frame && w.frame.contentWindow) w.frame.contentWindow.location.reload();
+            else if (document.getElementById('inventory-root')) location.reload();
+        } catch (e) { /* not there yet */ }
     }
     function loB64(text) {
         const bytes = new TextEncoder().encode(text);
@@ -13537,7 +13515,8 @@
         const slots = {};
         for (const [k, v] of Object.entries(saved.slots || {})) {
             slots[k] = { sel: v.sel ?? null, selName: v.selName || null };
-            if (v.random !== undefined) Object.assign(slots[k], { random: !!v.random, pool: v.pool || [] });
+            if (v.random !== undefined) slots[k].random = !!v.random;
+            if (Array.isArray(v.pool)) slots[k].pool = v.pool;
         }
         return LO_PREFIX + loB64(JSON.stringify({ v: 1, name: saved.name, player: saved.player || null, slots }));
     }
@@ -13552,10 +13531,8 @@
         for (const [k, v] of Object.entries(j.slots)) {
             if (!LO_SLOTS[k] || !v || typeof v !== 'object') continue;
             slots[k] = { sel: v.sel == null ? null : String(v.sel), selName: v.selName ? String(v.selName).slice(0, 80) : null };
-            if (LO_SLOTS[k].random && v.random !== undefined) {
-                slots[k].random = !!v.random;
-                slots[k].pool = Array.isArray(v.pool) ? v.pool.slice(0, 10).map(String) : [];
-            }
+            if (LO_SLOTS[k].random && v.random !== undefined) slots[k].random = !!v.random;
+            if (LO_SLOTS[k].random && Array.isArray(v.pool)) slots[k].pool = v.pool.slice(0, 10).map(String);
         }
         if (!Object.keys(slots).length) throw new Error('The code holds no known slot.');
         return { name: String(j.name || '').trim().slice(0, 40), player: j.player ? String(j.player) : null, slots };
@@ -13590,120 +13567,341 @@
         return ok;
     }
 
-    // The settings page. Everything happens in place; the list is drawn again after each step.
-    function loadoutsCard(redraw) {
-        const wrap = document.createElement('div');
-        const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-        const say = (html, tone) => { lo.status = html ? `<div class="mcfo-lo__status" data-tone="${tone || ''}">${html}</div>` : ''; redraw(); };
-        const run = async (job) => {
-            if (lo.busy) return;
-            lo.busy = true; redraw();
-            try { await job(); } catch (e) { say(esc(e.message || e), 'error'); }
-            lo.busy = false; redraw();
-        };
+    // --- In the inventory (6.32): a loadout bar above the game's inventory, and while a new
+    // loadout is being built, buttons on every item card. Building never equips anything: the
+    // picks only go into the draft, across all inventory pages, until Save. A slot left out of a
+    // loadout stays as it is when the loadout is put on, so a loadout can be just trail and border.
+    // The game redraws its cards with innerHTML all the time; the bar therefore sits beside the
+    // root (never inside it), and the card buttons are set again after every redraw.
+    const LO_DRAFT = 'mcfo_lo_draft';
+    const LO_STATUS = 'mcfo_lo_status';
+    // Inventory sub-page -> the slots its cards can fill. Pages not listed (shields, king tile
+    // backgrounds ...) get no buttons: they are not part of a loadout yet.
+    const LO_PAGES = {
+        crowns:                 [['krone', 'Loadout'], ['krone', 'Pool', 'pool']],
+        chat_font_colors:       [['farbe', 'Chat'], ['farbeKing', 'As King']],
+        chat_background_style:  [['chat', 'Loadout']],
+        username_style:         [['namen', 'Loadout']],
+        king_chat_bubble_style: [['blase', 'Loadout']],
+        marble_trails:          [['trail', 'Loadout'], ['trail', 'Pool', 'pool']],
+        marble_borders:         [['border', 'Loadout'], ['border', 'Pool', 'pool']],
+    };
+    const LO_NONE = { marble_trails: ['trail', 'No trail'], marble_borders: ['border', 'No border'] };
+    const loDocs = new Set();
+    let loUi = { mode: '', confirm: null, pick: '' };   // mode: '' | 'save' | 'import'
 
-        if (!lo.player) {
-            const card = document.createElement('div');
-            card.className = 'mcfo-set__card mcfo-lo';
-            card.innerHTML = '<div class="mcfo-lo__empty">Reading your inventory \u2026</div>';
-            wrap.appendChild(card);
-            loState().then(() => { if (lo.player) redraw(); else { card.firstChild.textContent = 'Sign in to use loadouts.'; } })
-                     .catch(() => { card.firstChild.textContent = 'The inventory did not answer. Open this page again in a moment.'; });
-            return wrap;
+    function loDraft() {
+        try { return JSON.parse(localStorage.getItem(LO_DRAFT) || 'null'); } catch (e) { return null; }
+    }
+    function loSetDraft(d) {
+        try { if (d) localStorage.setItem(LO_DRAFT, JSON.stringify(d)); else localStorage.removeItem(LO_DRAFT); } catch (e) { /* blocked */ }
+        loRedraw();
+    }
+    // The status survives the inventory being reloaded after Put on.
+    function loSay(html, tone) {
+        try { sessionStorage.setItem(LO_STATUS, JSON.stringify({ html, tone: tone || '', at: Date.now() })); } catch (e) { /* blocked */ }
+        loRedraw();
+    }
+    function loStatus() {
+        try { const s = JSON.parse(sessionStorage.getItem(LO_STATUS) || 'null'); return s && Date.now() - s.at < 5 * 60 * 1000 ? s : null; } catch (e) { return null; }
+    }
+    const loEsc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    async function loRun(job) {
+        if (lo.busy) return;
+        lo.busy = true; loRedraw();
+        try { await job(); } catch (e) { loSay(loEsc(e.message || e), 'error'); }
+        lo.busy = false; loRedraw();
+    }
+    async function loKnowPlayer() {
+        if (lo.player) return lo.player;
+        const r = await loFetch('/api/inventory/crowns');
+        if (r.data && r.data.playerId) lo.player = String(r.data.playerId);
+        if (!lo.player) throw new Error('Sign in to use loadouts.');
+        return lo.player;
+    }
+    function loRedraw() {
+        for (const doc of [...loDocs]) {
+            if (!doc.defaultView || !doc.getElementById('inventory-root')) { loDocs.delete(doc); continue; }
+            loDrawBar(doc);
+            loDecorate(doc);
         }
+    }
 
-        const save = document.createElement('div');
-        save.className = 'mcfo-set__card mcfo-lo mcfo-lo__save';
-        save.innerHTML = '<div class="mcfo-lo__title">Save what you wear now</div>'
-            + '<div class="mcfo-lo__line"><input type="text" maxlength="40" placeholder="Name, e.g. King night"><button type="button">Save</button></div>'
-            + '<div class="mcfo-lo__hint">Crown with its random pool, chat colour (normal and as King), chat background, username style, King bubble, marble trail and border. A loadout of the same name is replaced.</div>';
-        const nameIn = save.querySelector('input'), saveBtn = save.querySelector('button');
-        saveBtn.disabled = lo.busy;
-        nameIn.value = lo.draft.name;
-        nameIn.addEventListener('input', () => { lo.draft.name = nameIn.value; });
-        const doSave = () => {
-            const name = nameIn.value.trim();
-            if (!name) { nameIn.focus(); return; }
-            run(async () => {
-                const failed = await loSave(name);
-                lo.draft.name = '';
-                say(`Saved <b>${esc(name)}</b>.` + (failed.length ? ` Not readable just now: ${esc(failed.join(', '))}.` : ''), failed.length ? 'warn' : 'done');
-            });
-        };
-        saveBtn.addEventListener('click', doSave);
-        nameIn.addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
-        wrap.appendChild(save);
+    function invDocAssist(doc) {
+        const root = doc && doc.getElementById && doc.getElementById('inventory-root');
+        if (!root || doc.documentElement.hasAttribute('data-mcfo-invassist')) return;
+        doc.documentElement.setAttribute('data-mcfo-invassist', '1');
+        const st = doc.createElement('style');
+        st.id = 'mcfo-inv-assist';
+        st.textContent = LO_CSS;
+        (doc.head || doc.documentElement).appendChild(st);
+        loDocs.add(doc);
+        let queued = false;
+        new MutationObserver(() => {
+            if (queued) return;
+            queued = true;
+            // The bar too: its No trail / No border button depends on the page shown.
+            setTimeout(() => { queued = false; loDrawBar(doc); loDecorate(doc); }, 60);
+        }).observe(root, { childList: true, subtree: true });
+        loKnowPlayer().catch(() => {}).then(() => loRedraw());
+        loRedraw();
+    }
 
-        if (lo.status) { const st = document.createElement('div'); st.innerHTML = lo.status; wrap.appendChild(st.firstChild); }
+    function loPage(doc) {
+        const cur = doc.querySelector('button.inventorySubcategoryButton[aria-current="page"]');
+        return (cur && cur.getAttribute('data-subpage')) || '';
+    }
+    function loCardId(card) {
+        return card.getAttribute('data-id') || card.getAttribute('data-trail-card-id') || card.getAttribute('data-border-card-id') || '';
+    }
+    // What a draft slot says, short: for the chips in the bar and the button states.
+    function loPicked(draft, slot, id, kind) {
+        const v = draft && draft.slots[slot];
+        if (!v) return false;
+        if (kind === 'pool') return !!v.random && (v.pool || []).includes(id);
+        return !v.random && String(v.sel ?? '') === String(loBlank(id) ? '' : id);
+    }
+    function loToggle(slot, id, name, kind) {
+        const draft = loDraft();
+        if (!draft) return;
+        const v = draft.slots[slot];
+        const sel = loBlank(id) ? null : id;
+        if (kind === 'pool') {
+            const pool = v && v.random ? [...(v.pool || [])] : [];
+            const at = pool.indexOf(id);
+            if (at >= 0) pool.splice(at, 1);
+            else if (pool.length >= 10) { loSay('A random pool holds ten at most.', 'warn'); return; }
+            else pool.push(id);
+            const names = { ...(v && v.random ? v.poolNames || {} : {}) };
+            if (at >= 0) delete names[id]; else names[id] = name;
+            if (pool.length) draft.slots[slot] = { random: true, pool, poolNames: names };
+            else delete draft.slots[slot];
+        } else if (loPicked(draft, slot, id, 'sel')) {
+            delete draft.slots[slot];
+        } else {
+            draft.slots[slot] = { sel, selName: name || 'Default', random: LO_SLOTS[slot].random ? false : undefined };
+        }
+        loSetDraft(draft);
+    }
 
+    function loDecorate(doc) {
+        const draft = loDraft();
+        const page = loPage(doc);
+        const kinds = (draft && LO_PAGES[page]) || [];
+        for (const card of doc.querySelectorAll('article.inventoryCard')) {
+            let box = card.querySelector(':scope > .mcfo-lob');
+            if (!kinds.length) { if (box) box.remove(); continue; }
+            const id = loCardId(card);
+            if (!id) continue;
+            if (!box) { box = doc.createElement('div'); box.className = 'mcfo-lob'; card.appendChild(box); }
+            const name = ((card.querySelector('h3') || {}).textContent || '').trim() || '?';
+            const want = kinds.filter(([, , kind]) => !(kind === 'pool' && id === 'system_no_crown'));
+            if (box.children.length !== want.length) {
+                box.textContent = '';
+                for (const [slot, label, kind] of want) {
+                    const b = doc.createElement('button');
+                    b.type = 'button';
+                    b.className = 'mcfo-lob__pick';
+                    b.dataset.slot = slot; b.dataset.kind = kind || 'sel'; b.dataset.label = label;
+                    b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); loToggle(b.dataset.slot, loCardId(card), name, b.dataset.kind); });
+                    box.appendChild(b);
+                }
+            }
+            for (const b of box.children) {
+                const on = loPicked(draft, b.dataset.slot, id, b.dataset.kind);
+                const text = (on ? '\u2713 ' : '+ ') + b.dataset.label;
+                if (b.textContent !== text) b.textContent = text;
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            }
+        }
+    }
+
+    function loChips(draft) {
+        return Object.keys(LO_SLOTS).filter(k => draft.slots[k]).map(k => {
+            const v = draft.slots[k];
+            const what = v.random ? `random from ${(v.pool || []).length}` : (v.selName || 'Default');
+            return `<span class="mcfo-lobar__chip" data-slot="${k}" title="Click to take it out">${loEsc(LO_SLOTS[k].label)}: <b>${loEsc(what)}</b> <i>\u00d7</i></span>`;
+        }).join('');
+    }
+
+    function loDrawBar(doc) {
+        const root = doc.getElementById('inventory-root');
+        let bar = doc.querySelector('.mcfo-lobar');
+        if (!bar) { bar = doc.createElement('div'); bar.className = 'mcfo-lobar'; root.parentNode.insertBefore(bar, root); }
+        const draft = loDraft();
         const list = Object.values(loMine()).sort((a, b) => a.name.localeCompare(b.name));
-        const sub = document.createElement('div');
-        sub.className = 'mcfo-set__sub-title';
-        sub.textContent = list.length ? `Saved loadouts (${list.length})` : 'Saved loadouts';
-        wrap.appendChild(sub);
-        const card = document.createElement('div');
-        card.className = 'mcfo-set__card mcfo-lo';
-        if (!list.length) card.innerHTML = '<div class="mcfo-lo__empty">None yet. Save one above, or paste a code below.</div>';
-        for (const l of list) {
-            const row = document.createElement('div');
-            row.className = 'mcfo-lo__row';
-            const what = ['krone', 'trail', 'border'].filter(k => l.slots[k]).map(k => loSlotText(k, l.slots[k])).join(' \u00b7 ');
-            row.innerHTML = '<div class="mcfo-lo__info"><div class="mcfo-lo__name"></div><div class="mcfo-lo__what"></div></div>'
-                + '<div class="mcfo-lo__btns"><button type="button" data-a="load">Put on</button><button type="button" data-a="code">Copy code</button><button type="button" data-a="del">Delete</button></div>';
-            row.querySelector('.mcfo-lo__name').textContent = l.name;
-            row.querySelector('.mcfo-lo__what').textContent = new Date(l.savedAt).toLocaleDateString() + (what ? ' \u00b7 ' + what : '');
-            row.title = Object.entries(l.slots).map(([k, v]) => loSlotText(k, v)).join('\n');
-            for (const b of row.querySelectorAll('button')) b.disabled = lo.busy;
-            row.querySelector('[data-a=load]').addEventListener('click', () => run(async () => {
-                const r = await loLoad(l);
-                const marks = { done: 'mcfo-lo__ok', same: 'mcfo-lo__same', warn: 'mcfo-lo__warn', error: 'mcfo-lo__err' };
-                const bad = r.lines.some(([t]) => t === 'warn' || t === 'error');
-                say(`<b>${esc(l.name)}</b> put on, ${r.changed} slot${r.changed === 1 ? '' : 's'} changed.<ul>`
-                    + r.lines.map(([t, x]) => `<li class="${marks[t]}">${esc(x)}</li>`).join('') + '</ul>', bad ? 'warn' : 'done');
-            }));
-            row.querySelector('[data-a=code]').addEventListener('click', async () => {
-                const code = loCode(l);
-                const ok = await loCopy(code);
-                // Blocked clipboard: the code is shown, selected, to be copied by hand.
-                say(ok ? `Code for <b>${esc(l.name)}</b> copied. In Discord: <code>/loadout import</code> and paste it into <i>code</i>.`
-                       : `The browser blocked copying. Copy the code for <b>${esc(l.name)}</b> by hand:<textarea readonly rows="3">${esc(code)}</textarea>`, ok ? 'done' : 'warn');
-                const shown = !ok && document.querySelector('.mcfo-lo__status textarea');
-                if (shown) { shown.focus(); shown.select(); }
-            });
-            // Two clicks to delete: the first only asks.
-            const del = row.querySelector('[data-a=del]');
-            del.addEventListener('click', () => {
-                if (del.dataset.sure) { loPut(l.name.toLowerCase(), null); say(`Deleted <b>${esc(l.name)}</b>.`, 'done'); return; }
-                del.dataset.sure = '1'; del.textContent = 'Sure?';
-                setTimeout(() => { if (del.isConnected) { delete del.dataset.sure; del.textContent = 'Delete'; } }, 4000);
-            });
-            card.appendChild(row);
+        if (loUi.pick && !list.some(l => l.name.toLowerCase() === loUi.pick)) loUi.pick = '';
+        const pick = loUi.pick || (list[0] ? list[0].name.toLowerCase() : '');
+        const off = lo.busy ? ' disabled' : '';
+        const status = loStatus();
+        let html;
+        if (draft) {
+            const n = Object.keys(draft.slots).length, total = Object.keys(LO_SLOTS).length;
+            const none = LO_NONE[loPage(doc)];
+            html = `<div class="mcfo-lobar__row"><span class="mcfo-lobar__title">New loadout</span>`
+                + `<span class="mcfo-lobar__count">${n} of ${total} slots</span>`
+                + (none ? `<button type="button" data-a="none"${off}>${loPicked(draft, none[0], '', 'sel') ? '\u2713 ' : '+ '}${none[1]}</button>` : '')
+                + `<span class="mcfo-lobar__gap"></span>`
+                + `<input type="text" maxlength="40" placeholder="Name" data-f="name"><button type="button" data-a="build-save" class="mcfo-lobar__main"${off}>Save</button>`
+                + `<button type="button" data-a="build-close"${off}>Close</button></div>`
+                + `<div class="mcfo-lobar__chips">${n ? loChips(draft) : '<span class="mcfo-lobar__hint">Pick items below with <b>+ Loadout</b> (or <b>+ Pool</b> for a random pool) on any inventory page. Nothing is equipped while you build.</span>'}</div>`;
+            if (loUi.confirm) {
+                html += `<div class="mcfo-lobar__confirm">Not in this loadout: <b>${loEsc(loUi.confirm.join(', '))}</b>. When you put it on, those stay as they are.`
+                    + ` <button type="button" data-a="confirm-yes" class="mcfo-lobar__main">Save anyway</button><button type="button" data-a="confirm-no">Cancel</button></div>`;
+            }
+        } else {
+            html = `<div class="mcfo-lobar__row"><span class="mcfo-lobar__title">Loadouts</span>`
+                + (list.length
+                    ? `<select data-f="pick"${off}>${list.map(l => `<option value="${loEsc(l.name.toLowerCase())}"${l.name.toLowerCase() === pick ? ' selected' : ''}>${loEsc(l.name)}</option>`).join('')}</select>`
+                      + `<button type="button" data-a="load" class="mcfo-lobar__main"${off}>${lo.busy ? 'Working \u2026' : 'Put on'}</button><button type="button" data-a="code"${off}>Copy code</button><button type="button" data-a="del"${off}>Delete</button>`
+                    : `<span class="mcfo-lobar__hint">None saved yet.</span>`)
+                + `<span class="mcfo-lobar__gap"></span>`
+                + `<button type="button" data-a="new"${off}>New loadout</button><button type="button" data-a="wear"${off}>Save what I wear</button><button type="button" data-a="import"${off}>Import</button></div>`;
+            if (loUi.mode === 'save') {
+                html += `<div class="mcfo-lobar__row"><span class="mcfo-lobar__hint">Everything you wear now, under a name:</span><input type="text" maxlength="40" placeholder="Name" data-f="name">`
+                    + `<button type="button" data-a="wear-save" class="mcfo-lobar__main"${off}>Save</button><button type="button" data-a="cancel">Cancel</button></div>`;
+            } else if (loUi.mode === 'import') {
+                html += `<div class="mcfo-lobar__row mcfo-lobar__row--import"><textarea rows="2" data-f="code" placeholder="MLF-LOADOUT-1:\u2026 (from Copy code, or /loadout export in Discord)"></textarea>`
+                    + `<input type="text" maxlength="40" placeholder="Save as (empty: name in the code)" data-f="as"><button type="button" data-a="import-go" class="mcfo-lobar__main"${off}>Import</button><button type="button" data-a="cancel">Cancel</button></div>`;
+            }
         }
-        wrap.appendChild(card);
+        if (status) html += `<div class="mcfo-lobar__status" data-tone="${status.tone}">${status.html}<button type="button" data-a="hush" aria-label="Dismiss">\u00d7</button></div>`;
+        // Typed text survives the redraw.
+        const keep = {};
+        for (const f of bar.querySelectorAll('[data-f]')) keep[f.dataset.f] = f.value;
+        const focused = doc.activeElement && doc.activeElement.dataset && doc.activeElement.dataset.f;
+        if (bar._mcfoHtml === html) return;
+        bar._mcfoHtml = html;
+        bar.innerHTML = html;
+        for (const f of bar.querySelectorAll('[data-f]')) if (keep[f.dataset.f] != null && f.dataset.f !== 'pick') f.value = keep[f.dataset.f];
+        if (focused) { const f = bar.querySelector(`[data-f="${focused}"]`); if (f) f.focus(); }
+        loBind(doc, bar);
+    }
 
-        const imp = document.createElement('div');
-        imp.className = 'mcfo-set__sub-title';
-        imp.textContent = 'Import a code';
-        const ic = document.createElement('div');
-        ic.className = 'mcfo-set__card mcfo-lo';
-        ic.innerHTML = '<textarea rows="3" placeholder="MLF-LOADOUT-1:\u2026 (from Copy code, or from /loadout export in Discord)"></textarea>'
-            + '<div class="mcfo-lo__line"><input type="text" maxlength="40" placeholder="Save as (empty: the name in the code)"><button type="button">Import</button></div>';
-        const codeIn = ic.querySelector('textarea'), asIn = ic.querySelector('input'), impBtn = ic.querySelector('button');
-        impBtn.disabled = lo.busy;
-        codeIn.value = lo.draft.code; asIn.value = lo.draft.as;
-        codeIn.addEventListener('input', () => { lo.draft.code = codeIn.value; });
-        asIn.addEventListener('input', () => { lo.draft.as = asIn.value; });
-        impBtn.addEventListener('click', () => run(async () => {
-            const code = loReadCode(codeIn.value);
-            const name = asIn.value.trim() || code.name;
+    function loBind(doc, bar) {
+        const val = f => { const x = bar.querySelector(`[data-f="${f}"]`); return x ? x.value.trim() : ''; };
+        const picked = () => loMine()[(bar.querySelector('[data-f=pick]') || {}).value || ''];
+        const sel = bar.querySelector('[data-f=pick]');
+        if (sel) sel.addEventListener('change', () => { loUi.pick = sel.value; });
+        for (const ch of bar.querySelectorAll('.mcfo-lobar__chip')) ch.addEventListener('click', () => {
+            const d = loDraft(); if (!d) return; delete d.slots[ch.dataset.slot]; loUi.confirm = null; loSetDraft(d);
+        });
+        const saveDraft = (name) => loRun(async () => {
+            const d = loDraft();
+            await loKnowPlayer();
+            // Pool names were kept by id while building; saved, they are a list like everywhere else.
+            const slots = {};
+            for (const [k, v] of Object.entries(d.slots)) {
+                slots[k] = { ...v };
+                if (v.random) slots[k].poolNames = (v.pool || []).map(id => (v.poolNames || {})[id] || '?');
+            }
+            loPut(name.toLowerCase(), { name, savedAt: Date.now(), player: lo.player, slots });
+            loUi.confirm = null; loUi.pick = name.toLowerCase();
+            loSetDraft({ slots: {} });   // empty again: the next loadout can start right away
+            loSay(`Saved <b>${loEsc(name)}</b>. The picks are cleared for the next one.`, 'done');
+        });
+        const on = (a, fn) => { const b = bar.querySelector(`[data-a="${a}"]`); if (b) b.addEventListener('click', fn); };
+        on('hush', () => { try { sessionStorage.removeItem(LO_STATUS); } catch (e) { /* blocked */ } loRedraw(); });
+        on('new', () => { loUi.mode = ''; loSetDraft({ slots: {} }); });
+        on('build-close', () => { loUi.confirm = null; loSetDraft(null); });
+        on('none', () => { const n = LO_NONE[loPage(doc)]; if (n) loToggle(n[0], '', 'None', 'sel'); });
+        on('build-save', () => {
+            const d = loDraft(), name = val('name');
+            if (!d || !Object.keys(d.slots).length) { loSay('Pick at least one item first.', 'warn'); return; }
+            if (!name) { const f = bar.querySelector('[data-f=name]'); if (f) f.focus(); loSay('Give the loadout a name.', 'warn'); return; }
+            const missing = Object.keys(LO_SLOTS).filter(k => !d.slots[k]).map(k => LO_SLOTS[k].label);
+            if (missing.length) { loUi.confirm = missing; loUi.confirmName = name; loRedraw(); return; }
+            saveDraft(name);
+        });
+        on('confirm-yes', () => saveDraft(loUi.confirmName || val('name')));
+        on('confirm-no', () => { loUi.confirm = null; loRedraw(); });
+        on('wear', () => { loUi.mode = loUi.mode === 'save' ? '' : 'save'; loRedraw(); });
+        on('import', () => { loUi.mode = loUi.mode === 'import' ? '' : 'import'; loRedraw(); });
+        on('cancel', () => { loUi.mode = ''; loRedraw(); });
+        on('wear-save', () => {
+            const name = val('name');
+            if (!name) { const f = bar.querySelector('[data-f=name]'); if (f) f.focus(); return; }
+            loRun(async () => {
+                const failed = await loSave(name);
+                loUi.mode = ''; loUi.pick = name.toLowerCase();
+                loSay(`Saved <b>${loEsc(name)}</b>.` + (failed.length ? ` Not readable just now: ${loEsc(failed.join(', '))}.` : ''), failed.length ? 'warn' : 'done');
+            });
+        });
+        on('import-go', () => loRun(async () => {
+            const code = loReadCode(val('code'));
+            const name = val('as') || code.name;
             if (!name) throw new Error('The code has no name: type one into Save as.');
             const missing = await loImport(code, name);
-            lo.draft.code = ''; lo.draft.as = '';
-            say(`Imported <b>${esc(name)}</b>.` + (missing ? ` ${missing} item${missing > 1 ? 's are' : ' is'} not in your inventory right now; those slots stay as they are when you put it on.` : ''), missing ? 'warn' : 'done');
+            loUi.mode = ''; loUi.pick = name.toLowerCase();
+            loSay(`Imported <b>${loEsc(name)}</b>.` + (missing ? ` ${missing} item${missing > 1 ? 's are' : ' is'} not in your inventory right now; those slots stay as they are when you put it on.` : ''), missing ? 'warn' : 'done');
         }));
-        wrap.append(imp, ic);
-        return wrap;
+        on('load', () => { const l = picked(); if (l) loRun(async () => {
+            const r = await loLoad(l);
+            const marks = { done: 'ok', same: 'same', warn: 'warn', error: 'err' };
+            const bad = r.lines.some(([t]) => t === 'warn' || t === 'error');
+            loSay(`<b>${loEsc(l.name)}</b> put on, ${r.changed} slot${r.changed === 1 ? '' : 's'} changed.<ul>`
+                + r.lines.map(([t, x]) => `<li data-t="${marks[t]}">${loEsc(x)}</li>`).join('') + '</ul>', bad ? 'warn' : 'done');
+        }); });
+        on('code', async () => {
+            const l = picked(); if (!l) return;
+            const code = loCode(l);
+            const ok = await loCopy(code);
+            // Blocked clipboard: the code is shown, selected, to be copied by hand.
+            loSay(ok ? `Code for <b>${loEsc(l.name)}</b> copied. In Discord: <code>/loadout import</code> and paste it into <i>code</i>.`
+                     : `The browser blocked copying. Copy the code for <b>${loEsc(l.name)}</b> by hand:<textarea readonly rows="2">${loEsc(code)}</textarea>`, ok ? 'done' : 'warn');
+            const shown = !ok && bar.querySelector('.mcfo-lobar__status textarea');
+            if (shown) { shown.focus(); shown.select(); }
+        });
+        // Two clicks to delete: the first only asks.
+        const del = bar.querySelector('[data-a=del]');
+        if (del) del.addEventListener('click', () => {
+            const l = picked(); if (!l) return;
+            if (del.dataset.sure) { loPut(l.name.toLowerCase(), null); loUi.pick = ''; loSay(`Deleted <b>${loEsc(l.name)}</b>.`, 'done'); return; }
+            del.dataset.sure = '1'; del.textContent = 'Sure?';
+            setTimeout(() => { if (del.isConnected) { delete del.dataset.sure; del.textContent = 'Delete'; } }, 4000);
+        });
     }
+
+    const LO_CSS = `
+        .mcfo-lobar { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #2c4254; border-radius: 10px;
+            background: linear-gradient(180deg, rgba(22, 38, 52, 0.92), rgba(14, 25, 35, 0.92)); color: #cfe2f2;
+            font: 13px/1.35 system-ui, sans-serif; position: relative; z-index: 5; }
+        .mcfo-lobar__row { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+        .mcfo-lobar__row + .mcfo-lobar__row { margin-top: 8px; }
+        .mcfo-lobar__title { font-weight: 800; color: #e6f0f7; margin-right: 4px; }
+        .mcfo-lobar__count, .mcfo-lobar__hint { color: #9ab0c0; font-size: 12px; }
+        .mcfo-lobar__gap { flex: 1; }
+        .mcfo-lobar button, .mcfo-lob__pick { border: 1px solid #2c4254; border-radius: 7px; background: #111f2b; color: #cfe2f2;
+            font: 700 12px/1 system-ui, sans-serif; padding: 7px 10px; cursor: pointer; white-space: nowrap; }
+        .mcfo-lobar button:hover:not(:disabled), .mcfo-lob__pick:hover { background: #16283a; border-color: #4d7ea6; color: #fff; }
+        .mcfo-lobar button:disabled { opacity: 0.5; cursor: default; }
+        .mcfo-lobar button.mcfo-lobar__main { background: #1d4a6e; border-color: #3f7fae; color: #fff; }
+        .mcfo-lobar button[data-sure] { border-color: #a0503c; color: #ffb4a0; }
+        .mcfo-lobar select, .mcfo-lobar input, .mcfo-lobar textarea { box-sizing: border-box; border: 1px solid #2c4254; border-radius: 7px;
+            background: #0b1620; color: #e6f0f7; font: 12.5px system-ui, sans-serif; padding: 6px 8px; min-width: 0; }
+        .mcfo-lobar select { max-width: 220px; }
+        .mcfo-lobar input { width: 170px; }
+        .mcfo-lobar__row--import textarea { flex: 1 1 100%; resize: vertical; font: 11.5px ui-monospace, monospace; word-break: break-all; }
+        .mcfo-lobar__chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .mcfo-lobar__chip { border: 1px solid #3f7fae; border-radius: 999px; padding: 4px 9px; font-size: 12px; cursor: pointer; background: rgba(29, 74, 110, 0.35); }
+        .mcfo-lobar__chip i { font-style: normal; opacity: 0.6; margin-left: 2px; }
+        .mcfo-lobar__chip:hover i { opacity: 1; }
+        .mcfo-lobar__confirm { margin-top: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid #6f5a28; background: rgba(60, 45, 12, 0.45); color: #ffe3a3; font-size: 12.5px; }
+        .mcfo-lobar__confirm button { margin-left: 6px; }
+        .mcfo-lobar__status { margin-top: 8px; padding: 8px 30px 8px 10px; border-radius: 8px; font-size: 12.5px; position: relative;
+            border: 1px solid #2c5a3e; background: rgba(16, 52, 32, 0.45); color: #c8f0d6; }
+        .mcfo-lobar__status[data-tone=warn] { border-color: #6f5a28; background: rgba(60, 45, 12, 0.45); color: #ffe3a3; }
+        .mcfo-lobar__status[data-tone=error] { border-color: #7a3a2c; background: rgba(70, 20, 12, 0.45); color: #ffc2b2; }
+        .mcfo-lobar__status button[data-a=hush] { position: absolute; top: 5px; right: 5px; padding: 3px 7px; }
+        .mcfo-lobar__status ul { margin: 5px 0 0; padding-left: 18px; columns: 2; }
+        .mcfo-lobar__status li[data-t=same] { opacity: 0.6; }
+        .mcfo-lobar__status li[data-t=warn] { color: #ffe3a3; }
+        .mcfo-lobar__status li[data-t=err] { color: #ffb4a0; }
+        .mcfo-lobar__status textarea { display: block; width: 100%; margin-top: 6px; font: 11.5px ui-monospace, monospace; word-break: break-all; }
+        .mcfo-lob { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+        .mcfo-lob__pick { flex: 1; padding: 6px 8px; border-style: dashed; }
+        .mcfo-lob__pick[aria-pressed=true] { border-style: solid; background: #1d4a6e; border-color: #5aa0d8; color: #fff; }
+    `;
 
     // =========================================================================================
     // 12. FOOTER: SEASON, EPISODE, BUILD
