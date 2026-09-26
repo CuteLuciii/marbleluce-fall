@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.29.0
+// @version      6.30.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -298,13 +298,13 @@
         ]},
         { title: 'Ticket rail', blurb: 'Rebellion, Unbid, folding and extra chips.', items: [
             { key: 'railGroup', label: 'Rebellion button and folding',
-              hint: 'Rebellion sits beside the chips, the bigger amounts fold away behind an arrow.' },
+              hint: 'Rebellion sits beside the chips, the bigger amounts fold away behind an arrow. While you are King it becomes Royal Celebration, beside the toll.' },
             { key: 'unbidButton', label: 'Unbid button',
-              hint: 'Right of the chips: takes your bid back out of the queue with one click, the same as typing !unbid in the chat. Hidden while you are King, like Rebellion.' },
+              hint: 'Right of the chips: takes your bid back out of the queue with one click, the same as typing !unbid in the chat. Hidden while you are King.' },
             { key: 'autobidButton', label: 'Autobid button',
               hint: 'Right of Unbid: opens the autobid menu, where you switch it on, pick 1 to 100 tickets per tile and choose risk protection. One bid per tile. Hidden and paused while you are King.' },
             { key: 'rebellionPanel', label: 'Own Rebellion panel',
-              hint: 'All eight tiers at a glance, with a confirm step before diamonds are spent. Needs the Rebellion button above.' },
+              hint: 'All eight tiers at a glance, with a confirm step before diamonds are spent. As King the same for the eight Royal Celebration tiers. Needs the Rebellion button above.' },
             { key: 'extraChips', label: 'Extra ticket chips',
               hint: '10K up to 1B, unlocked like the built-in ones: at ten times the amount in tickets.' },
             { key: 'centreRail', label: 'Centre the rail on the board' },
@@ -1150,9 +1150,17 @@
            bid-area itself (data-king-toll-mode, written together with the toll controls in
            renderKingTollControls, app.js) — keyed on that, the buttons come and go with the reign
            without any polling of ours. Hidden, not removed: both come back as they were. */
-        [data-role="bid-area"][data-king-toll-mode="true"] > .mcfo-rebellion,
         [data-role="bid-area"][data-king-toll-mode="true"] > .mcfo-unbid,
         [data-role="bid-area"][data-king-toll-mode="true"] > .mcfo-autobid { display: none !important; }
+
+        /* Since 6.30 (game v0.10.1b) the Rebellion button stays while you are King and becomes
+           Royal Celebration, beside the toll controls — the game does the same with its own
+           footer button (royalCelebrationMode in app.js). Only the King ever sees it that way,
+           because it is keyed on the same data-king-toll-mode as the toll controls. */
+        .mcfo-rebellion[data-mcfo-royal="1"] { border-color: #8a6a2a; background: #1f1a0e; color: #ffe08a; }
+        .mcfo-rebellion[data-mcfo-royal="1"]:hover { background: #2b2412; border-color: #c9a040; }
+        .mcfo-menu--reb .mcfo-reb__title--royal { color: #ffe08a; }
+        .mcfo-menu--reb .mcfo-reb__rule { font-size: 11px; color: #c9b88a; line-height: 1.35; }
 
         /* === OWN REBELLION PANEL ===
            The game's panel stays in the page and does the buying; while ours is open it is only
@@ -8171,7 +8179,9 @@
             reb.addEventListener('click', e => {
                 e.preventDefault();
                 e.stopPropagation();
-                if (settings.rebellionPanel) { showRebellionPopup(reb); return; }
+                // While you are King the game's own panel shows Royal Celebrations instead of
+                // Rebellion tiers; opening it natively therefore needs no case of its own.
+                if (settings.rebellionPanel) { (isRoyalMode() ? showCelebrationPopup : showRebellionPopup)(reb); return; }
                 const ziel = document.querySelector('[data-role="nav-region"] > [data-role="rebellion-toggle"]');
                 if (ziel) ziel.click();
                 // The panel is anchored to the ORIGINAL button and would otherwise open at the
@@ -8180,6 +8190,14 @@
                 for (const ms of [0, 60, 250]) setTimeout(() => placeRebellionPanel(reb), ms);
             });
             if (area) area.prepend(reb);
+        }
+        const royal = isRoyalMode();
+        if ((reb.getAttribute('data-mcfo-royal') === '1') !== royal) {
+            if (royal) reb.setAttribute('data-mcfo-royal', '1'); else reb.removeAttribute('data-mcfo-royal');
+            reb.textContent = royal ? 'Royal Celebration' : 'Rebellion';
+            reb.title = royal ? 'Open Royal Celebrations (King only, once per reign)' : 'Open Rebellion purchases';
+            // A popup opened in the other mode would buy the wrong thing — close it.
+            closeMenus?.();
         }
 
         let arrow = rail.querySelector('[data-mcfo-rail="toggle"]');
@@ -9038,6 +9056,12 @@
     // and the game's own message ("Starting Rebellion…", "Rebellion started.", errors).
     function syncRebellionPopup(menu) {
         const panel = nativeRebellionPanel();
+        mirrorRebellionInfo(menu, panel, 'Rebellion panel not found.');
+        syncRebellionTiers(menu);
+    }
+    // Status box, balance and message — the game writes them into the same three fields in both
+    // modes (Rebellion and Royal Celebration), so both popups share this.
+    function mirrorRebellionInfo(menu, panel, missing) {
         const text = r => (panel?.querySelector(`[data-role="${r}"]`)?.textContent || '').trim();
 
         const active = panel?.querySelector('[data-role="rebellion-status"]');
@@ -9051,12 +9075,14 @@
         if (walletEl.textContent !== wallet) walletEl.textContent = wallet;
 
         const msgEl = menu.querySelector('.mcfo-reb__msg');
-        const msg = panel ? text('rebellion-message') : 'Rebellion panel not found.';
+        const msg = panel ? text('rebellion-message') : missing;
         if (msgEl.textContent !== msg) msgEl.textContent = msg;
         // The game colours its message by tone; read that back rather than guess from the words.
         const colour = panel?.querySelector('[data-role="rebellion-message"]')?.style.color || '';
         const tone = /243,\s*164|#f3a4a4/i.test(colour) ? 'error' : /159,\s*216|#9fd8b6/i.test(colour) ? 'success' : '';
         if ((msgEl.getAttribute('data-tone') || '') !== tone) msgEl.setAttribute('data-tone', tone);
+    }
+    function syncRebellionTiers(menu) {
 
         for (const b of menu.querySelectorAll('.mcfo-reb__tier')) {
             const tier = REB_TIERS.find(t => String(t.cost) === b.getAttribute('data-mcfo-cost'));
@@ -9109,6 +9135,140 @@
         setTimeout(() => { keepMenuOnce = false; }, 0);   // should the click never reach document
         button.click();
         syncRebellionPopup(menu);
+    }
+
+    // =========================================================================================
+    // 9k. ROYAL CELEBRATION PANEL (6.30, game v0.10.1b)
+    // =========================================================================================
+    // A King can buy one Royal Celebration per reign: ScoreZones boosted on all lanes for a number
+    // of tiles, the toll set to 10, attackers removed and the throne protected until it ends. The
+    // game offers it in the Rebellion panel itself — while you are King that panel is re-rendered
+    // by royalCelebrationPanel.js with eight tiers:
+    //
+    //     <div data-role="royal-celebration-tier" data-tier-id="royal_2500">
+    //         <strong data-role="royal-celebration-tier-multiplier">\u00d73</strong>
+    //         <span data-role="royal-celebration-tier-cost">2,500 Diamonds</span>
+    //         <span data-role="royal-celebration-tier-duration">17 tiles</span>
+    //         <button data-role="royal-celebration-tier-start" data-tier-id="royal_2500">Start</button>
+    //
+    // Same rules as 9a: NOTHING IS BOUGHT BY THIS SCRIPT — a tier presses the game's own Start,
+    // which posts to /api/king/celebrations with the game's guards and correlation id. The button
+    // is found by its tier id, checked against multiplier and tile count, looked up afresh at the
+    // moment of the click, and only the second click within four seconds presses it.
+    // Unlike Rebellion tiers, two tiers share a multiplier (x2 for 5 and for 10 tiles), which is
+    // why the game gives them ids; the id is what we match on.
+    const CEL_TIERS = [
+        { id: 'royal_500',   mult: 2,  tiles: 5,  cost: 500,   hue: '#e8d9a0' },
+        { id: 'royal_1000',  mult: 2,  tiles: 10, cost: 1000,  hue: '#f0d070' },
+        { id: 'royal_1700',  mult: 3,  tiles: 10, cost: 1700,  hue: '#f5c04a' },
+        { id: 'royal_2500',  mult: 3,  tiles: 17, cost: 2500,  hue: '#f5a83a' },
+        { id: 'royal_5000',  mult: 5,  tiles: 17, cost: 5000,  hue: '#f08a3a' },
+        { id: 'royal_7500',  mult: 5,  tiles: 25, cost: 7500,  hue: '#ec6f4a' },
+        { id: 'royal_10000', mult: 10, tiles: 25, cost: 10000, hue: '#e85a8a' },
+        { id: 'royal_12500', mult: 10, tiles: 50, cost: 12500, hue: '#c070f0' },
+    ];
+
+    // The game switches its panel on the same signal it uses for the toll controls.
+    function isRoyalMode() {
+        return role('bid-area')?.getAttribute('data-king-toll-mode') === 'true';
+    }
+
+    function nativeCelTier(id) {
+        const panel = nativeRebellionPanel();
+        return panel && panel.querySelector(`[data-role="royal-celebration-tier"][data-tier-id="${id}"]`);
+    }
+
+    function verifiedCelStart(tier) {
+        if (!isRoyalMode()) return null;
+        const block = nativeCelTier(tier.id);
+        if (!block) return null;
+        const mult  = (block.querySelector('[data-role="royal-celebration-tier-multiplier"]')?.textContent || '').trim();
+        const tiles = (block.querySelector('[data-role="royal-celebration-tier-duration"]')?.textContent || '').trim();
+        if (mult !== `\u00d7${tier.mult}` || tiles !== `${tier.tiles} tiles`) return null;
+        const button = block.querySelector('[data-role="royal-celebration-tier-start"]');
+        if (!button || button.getAttribute('data-tier-id') !== tier.id) return null;
+        if (button.disabled || button.getAttribute('aria-disabled') === 'true') return null;
+        return button;
+    }
+
+    function showCelebrationPopup(anchor) {
+        const menu = showPanel(anchor, 'mcfo-menu--reb', m => {
+            m.innerHTML = '<div class="mcfo-reb__head"><span class="mcfo-reb__title mcfo-reb__title--royal">Royal Celebration</span>'
+                        + '<span class="mcfo-reb__note">One per reign.</span></div>'
+                        + '<div class="mcfo-reb__info">'
+                        +   '<div class="mcfo-reb__rule">Boosts ScoreZones across all lanes, dangerous buckets become safe. '
+                        +   'Sets the toll to 10, removes attackers and protects you until it ends.</div>'
+                        +   '<div class="mcfo-reb__active" hidden></div>'
+                        +   '<div class="mcfo-reb__wallet"></div>'
+                        +   '<div class="mcfo-reb__msg"></div>'
+                        + '</div>'
+                        + '<div class="mcfo-reb__grid"></div>';
+            const grid = m.querySelector('.mcfo-reb__grid');
+            for (const tier of CEL_TIERS) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'mcfo-reb__tier';
+                b.style.setProperty('--mcfo-tier', tier.hue);
+                b.setAttribute('data-mcfo-cel', tier.id);
+                b.innerHTML = '<span class="mcfo-reb__mult"></span><span class="mcfo-reb__tiles"></span><span class="mcfo-reb__cost"></span>';
+                b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); celebrationTierClicked(tier, b, m); });
+                grid.appendChild(b);
+            }
+        }, { centre: true });
+        if (!menu) return;
+        document.documentElement.setAttribute('data-mcfo-rebpop', '1');
+        wakeNativeRebellion();
+        syncCelebrationPopup(menu);
+        placePanel(anchor, menu);
+        rebTimer = setInterval(() => {
+            if (!menu.isConnected) { stopRebellionPopup(); return; }
+            // The reign ended while it was open: nothing here can be bought any more.
+            if (!isRoyalMode()) { closeMenus?.(); stopRebellionPopup(); return; }
+            syncCelebrationPopup(menu);
+        }, 250);
+    }
+
+    function syncCelebrationPopup(menu) {
+        mirrorRebellionInfo(menu, nativeRebellionPanel(), 'Royal Celebration panel not found.');
+        for (const b of menu.querySelectorAll('.mcfo-reb__tier')) {
+            const tier = CEL_TIERS.find(t => t.id === b.getAttribute('data-mcfo-cel'));
+            const block = nativeCelTier(tier.id);
+            const usable = !!verifiedCelStart(tier);
+            if (b.getAttribute('data-mcfo-armed') === '1' && !usable) disarm(b);
+            b.disabled = !usable;
+            b.title = !block ? 'Loading tiers \u2026' : '';
+            const armedNow = b.getAttribute('data-mcfo-armed') === '1';
+            const mult  = armedNow ? 'Confirm' : `x${tier.mult}`;
+            const tiles = armedNow ? `${number(tier.cost)} diamonds?` : `${tier.tiles} tiles`;
+            const cost  = armedNow ? 'click again' : `${number(tier.cost)} diamonds`;
+            const [m1, m2, m3] = b.children;
+            if (m1.textContent !== mult)  m1.textContent = mult;
+            if (m2.textContent !== tiles) m2.textContent = tiles;
+            if (m3.textContent !== cost)  m3.textContent = cost;
+        }
+    }
+
+    function celebrationTierClicked(tier, b, menu) {
+        if (b.disabled) return;
+        if (b.getAttribute('data-mcfo-armed') !== '1') {
+            for (const other of menu.querySelectorAll('.mcfo-reb__tier[data-mcfo-armed="1"]')) disarm(other);
+            b.setAttribute('data-mcfo-armed', '1');
+            b._mcfoDisarm = setTimeout(() => { disarm(b); syncCelebrationPopup(menu); }, REB_CONFIRM_MS);
+            syncCelebrationPopup(menu);
+            return;
+        }
+        disarm(b);
+        const button = verifiedCelStart(tier);
+        if (!button) {
+            const msgEl = menu.querySelector('.mcfo-reb__msg');
+            msgEl.textContent = 'Not started: the game\u2019s panel did not confirm this tier. Nothing was spent.';
+            msgEl.setAttribute('data-tone', 'error');
+            return;
+        }
+        keepMenuOnce = true;
+        setTimeout(() => { keepMenuOnce = false; }, 0);
+        button.click();
+        syncCelebrationPopup(menu);
     }
 
     // =========================================================================================
@@ -10300,12 +10460,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.29.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.30.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.30.0', date: '2026-09-26', items: [
+            'Royal Celebrations: while you are King, the Rebellion button turns into Royal Celebration and sits right beside the toll, like Rebellion beside the ticket chips. Only the King sees it.',
+            'It opens a panel with all eight tiers (x2 to x10, 5 to 50 tiles, 500 to 12,500 diamonds), the celebration that is running and your balance. Like Rebellion, a tier needs a second click to confirm, and it is the game\'s own Start that buys.',
+            'When your reign ends the button goes back to Rebellion and an open celebration panel closes.',
+        ] },
         { v: '6.29.0', date: '2026-09-26', items: [
             'Autobid has tile lists, like the MarbleMind bot: with Only known tiles on (the default) it bids only on tiles on your allowlist. A tile the game has just added gets no bid, and autobid holds back while one is taking bids.',
             'New tiles show up in the autobid menu with Allow and Block. Under Tile lists you can add or remove any tile yourself.',
