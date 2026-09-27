@@ -25,7 +25,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **Shop and dailies** — a gold Quest tag on shop offers that would complete an open shop quest (and a gold dot while one is in the rotation), euro prices beside every diamond price, and "Claim all dailies" in one click from the account menu — or, opt-in, claimed by themselves.
 - **Update notice** — a red dot on the account card within minutes of a new release, with a one-click update; both versions (MCF and MLF) in the footer.
 - **Settings gear** — one click to all settings, including the game's own sound and graphics levels.
-- **Performance levels** and **Deluxe effects** (full, subtle, off) for slower machines.
+- **Performance levels** and **Deluxe effects** (full, subtle, off) for slower machines, plus a frame rate counter with min, average and max.
 - **How-to** and **What's new** inside the script.
 
 ## Good to know

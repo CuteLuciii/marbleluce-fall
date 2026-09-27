@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.32.0
+// @version      6.33.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1744,9 +1744,22 @@
             padding: 5px 9px; border-radius: 7px;
             background: rgba(9, 16, 24, 0.85); border: 1px solid #2c4254;
             color: #cfe2f2; font: 700 12px/1 ui-monospace, monospace;
-            pointer-events: none; font-variant-numeric: tabular-nums;
+            cursor: pointer; font-variant-numeric: tabular-nums; user-select: none;
         }
         .mcfo-fps[hidden] { display: none !important; }
+        .mcfo-fps[data-mcfo-pinned] { border-color: #5a7f9c; }
+        /* Min / average / max under the badge (fpsPopup): on hover, pinned by a click. */
+        .mcfo-fpspop {
+            position: fixed; z-index: 10042; min-width: 128px;
+            padding: 7px 10px; border-radius: 8px;
+            background: rgba(9, 16, 24, 0.94); border: 1px solid #2c4254;
+            color: #cfe2f2; font: 600 12px/1.5 ui-monospace, monospace; font-variant-numeric: tabular-nums;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45); pointer-events: none;
+        }
+        .mcfo-fpspop[hidden] { display: none !important; }
+        .mcfo-fpspop__row { display: flex; justify-content: space-between; gap: 14px; }
+        .mcfo-fpspop__row b { font-weight: 700; }
+        .mcfo-fpspop__note { margin-top: 3px; color: #7f97ab; font-size: 10.5px; }
         /* In the Tickets card (drawFpsMeter): a cell of its grid, right-aligned, no longer floating. */
         .mcfo-fps.mcfo-fps--card { position: static; z-index: auto; justify-self: end; align-self: center; }
         .mcfo-fps[data-mcfo-tone="low"] { color: #ffb4a8; border-color: #6f4a4a; }
@@ -10461,12 +10474,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.32.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.33.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.33.0', date: '2026-09-28', items: [
+            'Frame rate counter: hover it (or click to keep it open) for the lowest, average and highest frame rate since it was switched on. Seconds with the tab in the background are left out.',
+        ] },
         { v: '6.32.0', date: '2026-09-27', items: [
             'Loadouts moved into the inventory: a bar at the top of Inventory \u203a Loadouts with your saved loadouts (Put on, Copy code, Delete), Save what I wear and Import. The page in the settings is gone.',
             'New loadout: click it and every item card gets + Loadout (crowns, trails and borders also + Pool, chat colours + Chat and + As King). Nothing is equipped while you build; your picks show as chips at the top, across all inventory pages, and a click on a chip takes it out.',
@@ -14110,6 +14126,46 @@
     // Counts the frames the game actually gets. With pacing active that is our pump; without
     // it a light native loop of its own, which exists only while the counter is on.
     let fpsBadge = null, fpsTimer = null, fpsLoopOn = false, fpsNativeFrames = 0, fpsLastDelivered = 0;
+    // Min / max / average of the one-second readings since the counter was switched on (or the
+    // page loaded). Seconds in a hidden tab do not count: the browser stops animation frames
+    // there, and those zeros would drag the minimum and the average down to nothing.
+    const fpsStats = { min: Infinity, max: 0, sum: 0, n: 0, since: 0, skip: true };
+    let fpsPop = null, fpsHover = false, fpsPinned = false;
+    function fpsStatsReset() {
+        Object.assign(fpsStats, { min: Infinity, max: 0, sum: 0, n: 0, since: Date.now(), skip: true });
+    }
+    function fpsPopupDraw() {
+        if (!fpsPop || !fpsBadge) return;
+        const open = (fpsHover || fpsPinned) && !fpsBadge.hidden;
+        fpsPop.hidden = !open;
+        fpsBadge.toggleAttribute('data-mcfo-pinned', fpsPinned);
+        if (!open) return;
+        const has = fpsStats.n > 0;
+        const row = (k, v) => `<div class="mcfo-fpspop__row"><span>${k}</span><b>${has ? v + ' fps' : '\u2026'}</b></div>`;
+        const t = new Date(fpsStats.since || Date.now());
+        const hhmm = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+        fpsPop.innerHTML = row('Min', fpsStats.min) + row('Avg', has ? Math.round(fpsStats.sum / fpsStats.n) : 0)
+            + row('Max', fpsStats.max) + `<div class="mcfo-fpspop__note">since ${hhmm}</div>`;
+        // Below the badge when it sits in the header card, above it when it floats over the footer.
+        const r = fpsBadge.getBoundingClientRect(), h = fpsPop.offsetHeight, w = fpsPop.offsetWidth;
+        const below = r.bottom + 6 + h <= innerHeight;
+        fpsPop.style.top = Math.round(below ? r.bottom + 6 : r.top - 6 - h) + 'px';
+        fpsPop.style.left = Math.round(Math.max(8, Math.min(innerWidth - w - 8, r.right - w))) + 'px';
+    }
+    function fpsBadgeWire(badge) {
+        fpsPop = document.createElement('div');
+        fpsPop.className = 'mcfo-fpspop';
+        fpsPop.hidden = true;
+        document.body.appendChild(fpsPop);
+        badge.title = '';
+        badge.addEventListener('mouseenter', () => { fpsHover = true; fpsPopupDraw(); });
+        badge.addEventListener('mouseleave', () => { fpsHover = false; fpsPopupDraw(); });
+        badge.addEventListener('click', e => { e.stopPropagation(); fpsPinned = !fpsPinned; fpsPopupDraw(); });
+        // A pinned popup closes on any click elsewhere, like a menu.
+        document.addEventListener('click', e => {
+            if (fpsPinned && !badge.contains(e.target)) { fpsPinned = false; fpsPopupDraw(); }
+        }, true);
+    }
     function fpsLoop() {
         if (!fpsLoopOn) return;
         fpsNativeFrames++;
@@ -14118,6 +14174,7 @@
     function drawFpsMeter() {
         if (!settings.perfFpsMeter) {
             if (fpsBadge) fpsBadge.hidden = true;
+            if (fpsPop) { fpsPinned = false; fpsHover = false; fpsPop.hidden = true; }
             if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
             fpsLoopOn = false;
             return;
@@ -14126,6 +14183,7 @@
             fpsBadge = document.createElement('div');
             fpsBadge.className = 'mcfo-fps';
             fpsBadge.textContent = '… fps';
+            fpsBadgeWire(fpsBadge);
         }
         fpsBadge.hidden = false;
         // In the Tickets card, right-aligned. The card is a three-column grid — icon, text, and an
@@ -14148,6 +14206,7 @@
         if (!fpsLoopOn) { fpsLoopOn = true; fpsNativeFrames = 0; (nativeRaf || pageWindow.requestAnimationFrame.bind(pageWindow))(fpsLoop); }
         if (!fpsTimer) {
             fpsLastDelivered = framesDelivered;
+            fpsStatsReset();
             fpsTimer = setInterval(() => {
                 const paced = rafInstalled && rafPacingWanted();
                 const fps = paced ? framesDelivered - fpsLastDelivered : fpsNativeFrames;
@@ -14155,6 +14214,15 @@
                 fpsNativeFrames = 0;
                 fpsBadge.textContent = fps + ' fps';
                 fpsBadge.setAttribute('data-mcfo-tone', fps < 20 ? 'low' : fps < 40 ? 'mid' : 'ok');
+                // The first second after switching on (or coming back to the tab) is a partial one.
+                if (document.hidden) fpsStats.skip = true;
+                else if (fpsStats.skip) fpsStats.skip = false;
+                else {
+                    fpsStats.min = Math.min(fpsStats.min, fps);
+                    fpsStats.max = Math.max(fpsStats.max, fps);
+                    fpsStats.sum += fps; fpsStats.n++;
+                }
+                fpsPopupDraw();
             }, 1000);
         }
     }
