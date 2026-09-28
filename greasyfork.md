@@ -15,7 +15,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **Rebellion and Royal Celebration** — Rebellion beside the ticket chips with a panel of all tiers and a confirm click; while you are King it turns into Royal Celebration beside the toll, only for the King.
 - **Tileset name** — a new tileset is announced by its name over the board instead of a full-screen picture that blacks the game out.
 - **Beverage bar** — the beverages as a compact bar, as symbols or with names.
-- **On the throne** — opt-in: when you take the crown, the toll goes to your value and the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).
+- **On the throne** — opt-in: when you take the crown, the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).
 - **Tomato notice** — a tomato thrown at you shows as one small line with the thrower's name instead of a picture, and an x dismisses it.
 - **Enhanced chat** — hide system lines you don't need, text sizes, grouped messages, pop the chat out into a window, a compact cosmetics switch.
 - **Board fit** — the board sizes itself to your screen; see-through board frames.

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.34.0
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
+// @version      6.34.1
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -285,14 +285,11 @@
             { key: 'kingToll',   label: 'Toll setting',          hint: 'top right, added by MarbleLuceFall' },
         ] } },
         // 17 is TOLL_MAX of section 9c, which is declared further down and not reachable here.
-        { title: 'On the throne', blurb: 'Typing the toll, and toll and beverages set by themselves the moment you take the crown.', throne: true, items: [
+        { title: 'On the throne', blurb: 'Typing the toll, and beverages poured by themselves the moment you take the crown. The toll on taking the throne is the game\'s Default Toll (Inventory).', throne: true, items: [
             { key: 'tollInput', label: 'Type the toll',
               hint: 'On the throne: a field for 0 to 17, confirmed with Enter, instead of the Reduce and Increase buttons.' },
             { key: 'tollSlider', def: false, label: 'Toll slider',
               hint: 'Adds a slider next to the field. Needs the field above.' },
-            { key: 'throneToll', def: false, label: 'Set the toll',
-              hint: 'Opt-in. The moment you take the crown, the toll goes to this value, through the game\'s own Reduce and Increase buttons. Whatever you change later in the reign stays as you set it.',
-              sub: { key: 'throneTollValue', type: 'range', label: 'Toll', min: 0, max: 17, step: 1, def: 0, unit: '' } },
             { key: 'throneDrinks', def: false, redraw: true, label: 'Pour beverages',
               hint: 'Opt-in. The beverages picked below are poured as soon as the game unlocks them, 15 seconds into your reign, each through the game\'s own button. Its limits still apply: every beverage, size and currency once per reign, and only with enough gold or diamonds. Starts with your next reign, never in the middle of one.' },
         ]},
@@ -7796,14 +7793,14 @@
     }
 
     // =========================================================================================
-    // 7c. ON THE THRONE: TOLL AND BEVERAGES BY THEMSELVES (opt-in, 6.19)
+    // 7c. ON THE THRONE: BEVERAGES BY THEMSELVES (opt-in, 6.19; the toll part left in 6.34.1)
     // =========================================================================================
-    // The moment you take the crown, two things can happen without a click: the toll goes to a
-    // chosen value, and the beverages picked in the settings are poured. Nothing is assembled
-    // here. The toll goes through the game's Reduce / Increase buttons (stepTollTo, section 9c),
-    // every beverage through the game's own button (nativeBeverageButton, section 7), so every
-    // guard the game has keeps applying: only the King may set the toll, beverages unlock 15 s
-    // into a reign, the balance, once per beverage, size and currency per reign.
+    // The moment you take the crown, the beverages picked in the settings are poured without a
+    // click. Nothing is assembled here: every beverage goes through the game's own button
+    // (nativeBeverageButton, section 7), so every guard the game has keeps applying: beverages
+    // unlock 15 s into a reign, the balance, once per beverage, size and currency per reign.
+    // Setting the toll on capture was part of this until 6.34.1; since game v0.10.1f the game's
+    // Default Toll (Inventory) does that itself, and a second setter would only fight it.
     //
     // When: on the change to King (the bid area's toll mode, the script-wide King signal), and
     // once per reign. The reign is told apart by king.capturedAtMs from the snapshot, kept in
@@ -7815,7 +7812,6 @@
     const THRONE_DONE_KEY = 'mcfo_throne_done';
     const THRONE_FRESH_MS = 3 * 60 * 1000;
     const THRONE_UNLOCK_MS = 15000;      // the game unlocks beverages this long into a reign
-    const THRONE_TOLL_WAIT_MS = 20000;   // how long the toll controls may take to become editable
     const THRONE_POUR_MS = 25000;        // how long a greyed-out beverage is tried again
     const THRONE_NOTE_MS = 15000;
     const KING_SIGNAL = '[data-role="bid-area"][data-king-toll-mode="true"]';
@@ -7844,7 +7840,7 @@
         throne.king = king;
         if (!became || throne.running) return;
         const pour = settings.throneDrinks && settings.throneDrinkSet.length > 0;
-        if (!settings.throneToll && !pour) return;
+        if (!pour) return;
         throne.running = true;
         throneRun(pour)
             .catch(e => console.warn('[MarbleLuceFall] throne actions failed:', e && e.message))
@@ -7875,26 +7871,7 @@
         if (done === String(reign)) return;
         try { localStorage.setItem(THRONE_DONE_KEY, String(reign)); } catch (e) {}
 
-        // Both at once: the toll is set within a second, the beverages wait for their unlock.
-        const jobs = [];
-        if (settings.throneToll) jobs.push(throneToll(settings.throneTollValue).then(line => throneNote([line])));
-        if (pour) jobs.push(throneDrinks(reign, settings.throneDrinkSet.slice()).then(throneNote));
-        await Promise.all(jobs);
-    }
-
-    async function throneToll(value) {
-        const want = Math.max(0, Math.min(TOLL_MAX, Math.round(value)));
-        const until = Date.now() + THRONE_TOLL_WAIT_MS;
-        while (Date.now() < until) {
-            const st = tollState();
-            if (st.canEdit && st.value !== null) {
-                if (st.value === want) return `Toll stays at ${want}`;
-                stepTollTo(want);
-                return `Toll set to ${want}`;
-            }
-            await nap(500);
-        }
-        return 'Toll not set: the game did not open its toll controls in time';
+        if (pour) throneNote(await throneDrinks(reign, settings.throneDrinkSet.slice()));
     }
 
     async function throneDrinks(reign, wanted) {
@@ -10474,12 +10451,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.34.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.34.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.34.1', date: '2026-09-28', items: [
+            'Settings \u203a On the throne: Set the toll is gone. The game now has its own Default Toll in the inventory (for taking the throne and for Royal Celebrations), and two setters would only fight each other. Pouring beverages stays.',
+        ] },
         { v: '6.34.0', date: '2026-09-28', items: [
             'Loadouts now also hold your royal titles (chat, throne, Royal Celebrations) and your default tolls (throne capture, celebration start, celebration end). Save what I wear takes them along; when building, the Royal Title and Default Toll pages give every card + Chat / + Throne / + Celebration or + Throne / + Celeb. start / + Celeb. end.',
             'Older loadouts without these slots leave your titles and tolls as they are.',
