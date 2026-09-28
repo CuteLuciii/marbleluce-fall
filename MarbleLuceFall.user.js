@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.33.0
+// @version      6.34.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto toll and beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -10474,12 +10474,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.33.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.34.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.34.0', date: '2026-09-28', items: [
+            'Loadouts now also hold your royal titles (chat, throne, Royal Celebrations) and your default tolls (throne capture, celebration start, celebration end). Save what I wear takes them along; when building, the Royal Title and Default Toll pages give every card + Chat / + Throne / + Celebration or + Throne / + Celeb. start / + Celeb. end.',
+            'Older loadouts without these slots leave your titles and tolls as they are.',
+        ] },
         { v: '6.33.0', date: '2026-09-28', items: [
             'Frame rate counter: hover it (or click to keep it open) for the lowest, average and highest frame rate since it was switched on. Seconds with the tab in the background are left out.',
         ] },
@@ -13392,6 +13396,15 @@
         read: d => ({ items: d.availableItems || [], sel: loBlank(d.selectedInventoryItemId) ? null : d.selectedInventoryItemId }),
         pick: id => ['/api/inventory/chat-cosmetics/selected', { slotType, inventoryItemId: id || null }],
     });
+    // Royal titles and default tolls (game v0.10.1f): one list of items, one pick per occasion
+    // ("contexts": chat / throne / celebration, throne capture / celebration start / end), set with
+    // POST .../selected { slotType, inventoryItemId }. There is no "none": every occasion always has a pick.
+    const loContext = (label, base, slotType) => ({
+        label, source: base, context: true,
+        read: d => { const c = (d.contexts || []).find(x => x.slotType === slotType);
+                     return { items: d.availableItems || [], sel: (c && (c.selectedInventoryItemId ?? c.inventoryItemId)) || null }; },
+        pick: id => [base + '/selected', { slotType, inventoryItemId: id }],
+    });
     const LO_SLOTS = {
         krone: { label: 'Crown', source: '/api/inventory/crowns', random: true,
                  read: d => ({ items: d.availableCrownItems || [], sel: d.selectedInventoryItemId || 'system_no_crown',
@@ -13411,6 +13424,12 @@
         blase:  loChat('King chat bubble', 'king_chat_bubble_style'),
         trail:  loMarble('Marble trail', '/api/inventory/marble-trails'),
         border: loMarble('Marble border', '/api/inventory/marble-borders'),
+        titelChat:  loContext('Title in chat', '/api/inventory/royal-titles', 'royal_title_chat'),
+        titelThron: loContext('Title on the throne', '/api/inventory/royal-titles', 'royal_title_throne'),
+        titelFeier: loContext('Title in celebrations', '/api/inventory/royal-titles', 'royal_title_celebration'),
+        tollThron:  loContext('Toll on throne capture', '/api/inventory/default-tolls', 'default_toll_throne'),
+        tollFeier:  loContext('Toll at celebration start', '/api/inventory/default-tolls', 'default_toll_celebration'),
+        tollEnde:   loContext('Toll at celebration end', '/api/inventory/default-tolls', 'default_toll_completed'),
     };
     const lo = { player: null, busy: false, status: '', draft: { name: '', code: '', as: '' } };   // drafts survive the redraws
 
@@ -13485,7 +13504,7 @@
                 for (const id of have.pool) if (!pool.includes(id)) steps.push([s.poolPath(id), {}, 'DELETE']);
                 for (const id of pool) if (!havePool.has(String(id))) steps.push([s.poolPath(id), {}, 'POST']);
             }
-            if ((!s.random || !want.random) && String(want.sel ?? '') !== String(have.sel ?? '')) {
+            if ((!s.random || !want.random) && String(want.sel ?? '') !== String(have.sel ?? '') && (want.sel || !s.context)) {
                 if (want.sel && !there.has(String(want.sel))) missing.push(want.sel);
                 else steps.push([...s.pick(want.sel), 'POST']);
             }
@@ -13601,6 +13620,8 @@
         king_chat_bubble_style: [['blase', 'Loadout']],
         marble_trails:          [['trail', 'Loadout'], ['trail', 'Pool', 'pool']],
         marble_borders:         [['border', 'Loadout'], ['border', 'Pool', 'pool']],
+        royal_title:            [['titelChat', 'Chat'], ['titelThron', 'Throne'], ['titelFeier', 'Celebration']],
+        default_toll:           [['tollThron', 'Throne'], ['tollFeier', 'Celeb. start'], ['tollEnde', 'Celeb. end']],
     };
     const LO_NONE = { marble_trails: ['trail', 'No trail'], marble_borders: ['border', 'No border'] };
     const loDocs = new Set();
@@ -13667,8 +13688,15 @@
         const cur = doc.querySelector('button.inventorySubcategoryButton[aria-current="page"]');
         return (cur && cur.getAttribute('data-subpage')) || '';
     }
+    // Title and toll cards carry no id; the page's own pickers (one <select> per occasion) do,
+    // with the display name as option text - and names are unique there.
     function loCardId(card) {
-        return card.getAttribute('data-id') || card.getAttribute('data-trail-card-id') || card.getAttribute('data-border-card-id') || '';
+        const id = card.getAttribute('data-id') || card.getAttribute('data-trail-card-id') || card.getAttribute('data-border-card-id');
+        if (id) return id;
+        const name = ((card.querySelector('h3') || {}).textContent || '').trim();
+        const opt = name && [...card.ownerDocument.querySelectorAll('select[data-royal-title-slot] option, select[data-default-toll-slot] option')]
+            .find(o => o.textContent.trim() === name);
+        return opt ? opt.value : '';
     }
     // What a draft slot says, short: for the chips in the bar and the button states.
     function loPicked(draft, slot, id, kind) {
