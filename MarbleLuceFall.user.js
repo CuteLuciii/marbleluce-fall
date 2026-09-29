@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.35.1
+// @version      6.35.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1423,7 +1423,6 @@
         }
         /* The card already lifts its own border on hover; the chip follows along a step, without
            turning into a second focus point. */
-        .mcfo-card:hover .mcfo-signpost { background: #1b3550; border-color: #4d7ea6; }
         /* The game's own Purchase button is the fourth of these chips, so it is pulled into line
            rather than left as the odd one out: same weight, same arrow. Its colours already match
            — they are where the chip style came from. The arrow is added through ::after so the
@@ -3170,6 +3169,10 @@
     //                  (kind), gold and diamond prices, rebellion tiers: they keep their colours and
     //                  take only the skin's shape, edge and relief
     //   popups         menus, the name list, the game's sound panel: the skin's panel look
+    // The chips inside a clickable header card (our signposts, the game's Purchase) take no hover
+    // look of their own (6.35.2): the whole card glows instead, and a chip lighting up on top of
+    // it was one signal too many. Left out of every skin's :hover rule.
+    const SKIN_HOVERLESS = ['.mcfo-signpost', '[data-role="diamonds-purchase-link"]'];
     const SKIN_BUTTONS = [
         '.mcf-chat__send', '.mcf-chat__cosmetics-toggle', '.mcf-chat__collapse', '.mcfo-chatpop-btn', '.mcfo-tomato-btn',
         '.mcfo-taskbar button', '.mcfo-win__head button', '[data-role="sound-utility-toggle"]',
@@ -3204,7 +3207,7 @@
                 const tooltip = `background: linear-gradient(rgba(16, 0, 16, 0.95), rgba(16, 0, 16, 0.95)) padding-box, linear-gradient(#5000ff, #28007f) border-box !important;
                     border: 2px solid transparent !important; border-radius: 0 !important; outline: 1px solid #100010;`;
                 const buttons = skinSel(S, SKIN_BUTTONS);
-                const hovers = skinSel(S, SKIN_BUTTONS, ':hover:not(:disabled)');
+                const hovers = skinSel(S, SKIN_BUTTONS.filter(b => !SKIN_HOVERLESS.includes(b)), ':hover:not(:disabled)');
                 const relief = 'box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.35), inset -2px -3px 0 rgba(0, 0, 0, 0.4) !important;';
                 return `
                 /* The ground between the boards (the game's shell, #07090b): deepslate in the dark,
@@ -3722,7 +3725,7 @@
             background: ${B.bg} !important; color: ${B.color} !important; border: ${B.border} !important; border-radius: ${B.radius} !important;
             box-shadow: ${B.shadow || 'none'} !important; ${B.extra || ''}
         }
-        ${skinSel(S, buttons, ':hover:not(:disabled)')} { ${B.hover || ''} }
+        ${skinSel(S, buttons.filter(b => !SKIN_HOVERLESS.includes(b)), ':hover:not(:disabled)')} { ${B.hover || ''} }
         ${skinSel(S, SKIN_BUTTONS, ':disabled')} { opacity: 0.6; }
         ${skinSel(S, SKIN_FILLED)} {
             border-radius: ${k.filled.radius} !important; ${k.filled.border ? `border: ${k.filled.border} !important;` : ''} box-shadow: ${k.filled.shadow || 'none'} !important;
@@ -10361,7 +10364,10 @@
             e.stopPropagation();
             const targets = tomatoPick.names.filter(n => tomatoPick.chosen.has(n));
             if (!targets.length || tomatoPick.busy) return;
-            tomatoPick.busy = true; count();
+            // The popup goes at once (Luce, 6.35.2); the throws carry on, and their answers come
+            // as one line in the chat.
+            closeMenus();
+            tomatoPick.busy = true;
             // The answers to these throws are gathered into one line (tomatoPass).
             tomatoRun = { targets, until: Infinity, landed: [], waits: 0, missing: [], other: 0, host: false };
             let sent = 0, why = '';
@@ -10369,17 +10375,14 @@
                 if (i) await new Promise(r => setTimeout(r, TOMATO_GAP_MS));
                 const r = sendChatLine('!tomato ' + n);
                 if (r.ok) sent++; else { why = r.why; break; }
-                if (menu.isConnected) say(`Thrown at ${sent} of ${targets.length} …`);
             }
             tomatoPick.busy = false;
             tomatoRun.sent = sent;
             // Answers come within a second as a rule; a little longer for a busy server.
             tomatoRun.until = Date.now() + 10 * 1000;
             chatPassSoon();
-            if (!menu.isConnected) return;
-            count();
-            if (why) say(`${sent} of ${targets.length} thrown. ${why}.`, 'error');
-            else say(`${sent} thrown. The chat shows what landed.`);
+            // The popup is gone by now: only a failure to send at all needs saying, as a notice.
+            if (why) notice(escapeHtml(`${sent} of ${targets.length} tomatoes thrown. ${why}.`), 'error');
         });
     }
 
@@ -10803,12 +10806,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.35.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.35.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.35.2', date: '2026-09-29', items: [
+            'On the header cards only the card itself lights up when the pointer is on it; the Purchase button and the signs inside no longer light up on their own.',
+            'The tomato popup closes as soon as you click Throw. The throws carry on, and their answers come as one line in the chat.',
+        ] },
         { v: '6.35.1', date: '2026-09-29', items: [
             'The tomato button moved from the chat header to the message box, between the text field and Send.',
             'All answers to one throw of the tomato button now come as ONE line in the chat, e.g. "Tomatoes: 12 landed \u00b7 2 on cooldown (names)", with an x to dismiss it. Answers to tomatoes you type yourself become one small line each, also with an x.',
