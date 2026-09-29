@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.38.2
+// @version      6.38.3
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -2831,7 +2831,8 @@
     }
 
     // ---- the game's stylesheets: mirrored rules ----
-    const THEME_SHEETS = /\/(chatPane|siteNavigation|shop|dailies|inventory)\.css(\?|$)/;
+    // trackb.css: the Profile and Leaderboards pages (trackb-pages.js), missing until 6.38.3.
+    const THEME_SHEETS = /\/(chatPane|siteNavigation|shop|dailies|inventory|trackb)\.css(\?|$)/;
     const THEME_SKIP_RULE = /cosmetic|royal|panel--|gradient--|derivative--|username|text--|treatment|vip|private-visual|flourish|frame--|preview|rarity|swatch|crown/i;
 
     // "a, :is(b, c)" -> each part behind html[data-mcfo-theme]. One attribute more than the
@@ -11313,12 +11314,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.3';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.38.3', date: '2026-09-29', items: ['The Profile and Leaderboards windows wear your theme too, like the Shop, Dailies and Inventory already did.'] },
         { v: '6.38.2', date: '2026-09-29', items: ['Tomato button: while All is ticked, players who turn up later are ticked as well, also right before you throw. Unticking anyone ends it; All stays ticked across reloads.'] },
         { v: '6.38.1', date: '2026-09-29', items: ['Flying tickets: every portion of tickets the game hands out gets its own flight, instead of being gathered for 30 seconds.'] },
         { v: '6.38.0', date: '2026-09-29', items: [
