@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.38.3
+// @version      6.38.4
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -7076,7 +7076,11 @@
         // through instead of 19%. The root is cleared instead, and the body's background is then
         // propagated to the canvas by the CSS background-propagation rule — painted exactly once,
         // covering the whole frame, and with no white fallback anywhere.
+        // Profile and Leaderboards (trackb.css) wrap the page in .trackb-shell with a background
+        // of its own, full height — it covered the body, and with it the glass, the theme's
+        // pattern and a Deluxe skin's ground (6.38.4). Cleared, like the other pages' grounds.
         style.textContent = `.mcfPageHeader, .mcfPageFooter, nav.mcfPageNav { display: none !important; }
+                             .trackb-shell { background: transparent !important; }
                              .mcfPageContent { padding-top: 12px !important; }
                              html.mcfo-glass { color-scheme: dark; background: transparent !important; }
                              html.mcfo-glass body { background: rgba(var(--mcfo-glass-rgb, 11, 18, 26), var(--mcfo-glass-a, 0.78)) !important; }`;
@@ -11314,12 +11318,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.3';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.4';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.38.4', date: '2026-09-29', items: [
+            'Inventory \u203a Royal Title: "Your Royal Titles" shows how many you have; the tooltip says how many of them every player has.',
+            'The Profile and Leaderboards windows lose their own dark page ground: see-through like the other windows, with your theme\'s pattern or Deluxe background, and without their own header bar.',
+        ] },
         { v: '6.38.3', date: '2026-09-29', items: ['The Profile and Leaderboards windows wear your theme too, like the Shop, Dailies and Inventory already did.'] },
         { v: '6.38.2', date: '2026-09-29', items: ['Tomato button: while All is ticked, players who turn up later are ticked as well, also right before you throw. Unticking anyone ends it; All stays ticked across reloads.'] },
         { v: '6.38.1', date: '2026-09-29', items: ['Flying tickets: every portion of tickets the game hands out gets its own flight, instead of being gathered for 30 seconds.'] },
@@ -14716,10 +14724,28 @@
             if (queued) return;
             queued = true;
             // The bar too: its No trail / No border button depends on the page shown.
-            setTimeout(() => { queued = false; loDrawBar(doc); loDecorate(doc); }, 60);
+            setTimeout(() => { queued = false; loDrawBar(doc); loDecorate(doc); invTitleCount(doc); }, 60);
         }).observe(root, { childList: true, subtree: true });
+        invTitleCount(doc);
         loKnowPlayer().catch(() => {}).then(() => loRedraw());
         loRedraw();
+    }
+
+    // "Your Royal Titles (12)" (6.38.4): the game lists every title as a card and never says how
+    // many. The ones every player has (Queen, King, Crown: "Included for every player") are
+    // counted too, and named in the tooltip.
+    function invTitleCount(doc) {
+        const grid = doc.querySelector('.inventoryRoyalTitleCards');
+        const h = grid && grid.parentElement && grid.parentElement.querySelector(':scope > h2');
+        if (!h) return;
+        const cards = [...grid.querySelectorAll(':scope > article.inventoryCard')];
+        const base = cards.filter(c => /included for every player/i.test(c.textContent)).length;
+        let tag = h.querySelector('.mcfo-titlecount');
+        if (!tag) { tag = doc.createElement('span'); tag.className = 'mcfo-titlecount'; h.appendChild(tag); }
+        const text = ` (${cards.length})`;
+        if (tag.textContent !== text) tag.textContent = text;
+        const tip = base ? `${cards.length - base} of your own, ${base} included for every player` : '';
+        if (tag.title !== tip) tag.title = tip;
     }
 
     function loPage(doc) {
