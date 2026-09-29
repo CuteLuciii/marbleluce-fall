@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.35.0
+// @version      6.35.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -318,9 +318,9 @@
             { key: 'chatSuggest', label: 'Tidy name suggestions',
               hint: 'Hides the empty bar the game leaves above the message box, and draws the name list for !tomato and the other targeted commands in the colours of your theme.' },
             { key: 'chatTomato', label: 'Tomatoes as a short notice',
-              hint: 'When someone throws a tomato at you, the chat shows one small line with their name instead of the picture, with an x to dismiss it.' },
+              hint: 'When someone throws a tomato at you, the chat shows one small line with their name instead of the picture, with an x to dismiss it. The answers to your own throws become small lines too; thrown with the tomato button, all answers of one throw are one line.' },
             { key: 'chatTomatoBtn', label: 'Tomato button',
-              hint: 'A tomato in the chat header. It lists the players you can throw at (the same list the game offers for !tomato): tick one, several or All, and throw. Each throw goes out as an ordinary !tomato line in the chat.' },
+              hint: 'A tomato between the message box and Send. It lists the players you can throw at (the same list the game offers for !tomato): tick one, several or All, and throw. Each throw goes out as an ordinary !tomato line in the chat.' },
             { key: 'chatStick', label: 'Stay at the newest message',
               hint: 'While you are at the bottom, the chat stays there — also after a reload and when names, fonts or pictures load late. Scroll up to read, and it stays where you are.' },
         ], extra: { title: 'Enhanced chat', items: [
@@ -1356,11 +1356,11 @@
         }
         .mcfo-win__body > [data-role="desktop-chat-pane"] .mcf-chat { border: 0; border-radius: 0; }
         html[data-mcfo-chatpop="1"] [data-role="chat-collapse"],
-        html[data-mcfo-chatpop="1"] .mcfo-chatpop-btn:not(.mcfo-tomato-btn),
+        html[data-mcfo-chatpop="1"] .mcfo-chatpop-btn,
         html[data-mcfo-chatpop="1"] .mcfo-chatrail { display: none !important; }
         /* The header gets as many columns as it has buttons. The game plans three, the chat
            script four; with ours it can be five, and a fixed count makes the last one wrap. */
-        html:is([data-mcfo-popbtn="1"], [data-mcfo-tombtn="1"]) .mcf-chat:not([data-collapsed="true"]) .mcf-chat__header {
+        html[data-mcfo-popbtn="1"] .mcf-chat:not([data-collapsed="true"]) .mcf-chat__header {
             grid-template-columns: minmax(0, 1fr) !important; grid-auto-flow: column; grid-auto-columns: auto;
         }
         .mcfo-chatpop-btn {
@@ -1392,8 +1392,12 @@
 
         /* === HEADER CARDS AS SIGNPOSTS === */
         .mcfo-card, .mcfo-card * { cursor: pointer !important; }
-        .mcfo-card { position: relative; transition: border-color 120ms ease; }
+        .mcfo-card { position: relative; transition: border-color 120ms ease, box-shadow 160ms ease; }
         .mcfo-card:hover { border-color: #4d7ea6 !important; }
+        /* 6.35.1: a card you can click glows as a whole when the pointer is on it — only the
+           game's Purchase button used to light up. Doubled class and !important, so it also wins
+           over a Deluxe skin's card shadow; the theme's accent colours it (themeAccentCss). */
+        html .mcfo-card.mcfo-card:hover { box-shadow: 0 0 0 1px #4d7ea6, 0 0 14px 2px rgba(77, 126, 166, 0.55) !important; }
         /* Colours taken from the game, not invented. The stock Diamonds card already contains
            the site's own way of saying "this card does something" — the Purchase button, drawn
            as #dcefff on #14283a with a #3d5f78 border at 11px. The signposts borrow exactly
@@ -1523,7 +1527,20 @@
         .mcfo-bev__quest::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #f2c14e; }
 
         /* === TOMATO BUTTON (6.35, section 9j) === */
-        .mcfo-tomato-btn svg { width: 17px; height: 17px; }
+        /* Between the message box and Send (6.35.1): the form is the game's two-column grid, so a
+           third column joins it while the button is there. As tall as Send, which the growing
+           message box keeps one line high at the bottom. */
+        .mcf-chat__form:has(> .mcfo-tomato-btn) { grid-template-columns: minmax(0, 1fr) auto auto !important; }
+        .mcfo-tomato-btn {
+            align-self: stretch; width: 38px; min-height: 30px; padding: 0; box-sizing: border-box;
+            display: grid; place-items: center;
+            border: 1px solid #355066; border-radius: 7px; background: #111f2b; color: #cde6ff; cursor: pointer;
+        }
+        .mcfo-tomato-btn:hover { border-color: #b0453a; background: #2a1715; }
+        html[data-mcfo-chatgrow="1"] .mcf-chat__form:has(.mcfo-chatgrow) > .mcfo-tomato-btn {
+            align-self: end; height: var(--mcfo-chatgrow-line, auto);
+        }
+        .mcfo-tomato-btn svg { width: 18px; height: 18px; }
         .mcfo-menu--tomato { width: 250px; padding: 10px 12px 12px; }
         .mcfo-tom__head { font-weight: 800; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: #ff9a8a;
                           padding-bottom: 7px; border-bottom: 1px solid #243443; margin-bottom: 6px; }
@@ -2910,6 +2927,7 @@
             `${S}[data-mcfo-chatcos="1"] .mcf-chat__cosmetics-toggle[aria-pressed="true"]::before { background-color: ${track}; }`,
             `${S} .mcfo-tsbanner__name { color: ${c(0.84, 0.15)}; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 26px ${c(0.55, 0.16)}, 0 4px 22px rgba(0, 0, 0, 0.75); }`,
             `${S} .mcfo-tsbanner__kicker { color: ${c(0.9, 0.06)}; }`,
+            `${S} [data-role].mcfo-card.mcfo-card:hover { border-color: ${edge} !important; box-shadow: 0 0 0 1px ${edge}, 0 0 14px 2px ${c(0.6, 0.15).replace('rgb(', 'rgba(').replace(')', ', 0.55)')} !important; }`,
         ].join('\n');
     }
 
@@ -3153,7 +3171,7 @@
     //                  take only the skin's shape, edge and relief
     //   popups         menus, the name list, the game's sound panel: the skin's panel look
     const SKIN_BUTTONS = [
-        '.mcf-chat__send', '.mcf-chat__cosmetics-toggle', '.mcf-chat__collapse', '.mcfo-chatpop-btn',
+        '.mcf-chat__send', '.mcf-chat__cosmetics-toggle', '.mcf-chat__collapse', '.mcfo-chatpop-btn', '.mcfo-tomato-btn',
         '.mcfo-taskbar button', '.mcfo-win__head button', '[data-role="sound-utility-toggle"]',
         '.mcfo-rebellion', '.mcfo-rail-toggle', '.mcfo-unbid', '.mcfo-autobid',
         '[data-action="king-attack"]', '.mcfo-attack', '.mcfo-signpost',
@@ -10110,8 +10128,91 @@
         + '</svg>';
     const tomatoGone = new Set();
 
+    // Answers to your own throws (6.35.1), as the game words them (checked against 1,600 of the
+    // bot's): "Sent a tomato to X.", "You can tomato that player again in a moment.", "Could not
+    // find an active player named X." (older: "active chat user"), and a bare "Tomato" with a
+    // picture. Thrown with the tomato button, all answers of one throw become ONE line — 14 throws
+    // used to fill the chat with 14 command results. The first answer carries the line, the others
+    // are hidden. Typed by hand, each answer becomes a small line of its own. Every line has an x.
+    // The refusal does not name the player, so who was on cooldown is worked out at the end:
+    // the targets that neither landed nor were unknown.
+    const TOMATO_OUT_RE = /^\s*(?:Sent a tomato to (.+?)|(You can tomato that player again in a moment)|Could not find an active (?:player|chat user) named (.+?)|(Tomato))\.?\s*$/i;
+    let tomatoRun = null;               // the throw of the tomato button whose answers are gathered
+    const tomatoRows = new Map();       // row key -> { run, host, gone } — the game may draw a row afresh
+
+    function chatPassSoon() {
+        const list = chatRoot() && chatRoot().querySelector('[data-role="chat-messages"]');
+        if (list) setTimeout(() => tomatoPass(list), 0);
+    }
+
+    function tomatoRunText(run) {
+        const done = run.sent !== undefined && (Date.now() > run.until || run.landed.length + run.waits + run.missing.length >= run.sent);
+        const parts = [];
+        if (run.landed.length) parts.push(`<b>${run.landed.length}</b> landed`);
+        if (run.waits) {
+            const lower = new Set([...run.landed, ...run.missing].map(n => n.toLowerCase()));
+            const who = done ? run.targets.filter(n => !lower.has(n.toLowerCase())) : [];
+            parts.push(`<b>${run.waits}</b> on cooldown` + (who.length && who.length <= 6 ? ' (' + who.map(escapeHtml).join(', ') + ')' : ''));
+        }
+        if (run.missing.length) parts.push('not in the game: ' + run.missing.map(escapeHtml).join(', '));
+        if (!parts.length) parts.push('thrown');
+        return 'Tomatoes: ' + parts.join(' \u00b7 ') + (done ? '' : ' \u2026');
+    }
+
+    function tomatoNote(msg, html, time, rec) {
+        let note = msg.querySelector(':scope > .mcfo-tomato');
+        if (!note) {
+            note = document.createElement('div');
+            note.className = 'mcfo-tomato';
+            note.innerHTML = TOMATO_ICON + '<span class="mcfo-tomato__text"></span><span class="mcfo-tomato__time"></span>'
+                + '<button type="button" class="mcfo-tomato__x" title="Dismiss" aria-label="Dismiss">&times;</button>';
+            note.querySelector('.mcfo-tomato__time').textContent = time;
+            note.querySelector('button').addEventListener('click', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                rec.gone = true;
+                msg.setAttribute('data-mcfo-tomato-gone', '1');
+            });
+            msg.appendChild(note);
+            msg.setAttribute('data-mcfo-tomato', '1');
+        }
+        const text = note.querySelector('.mcfo-tomato__text');
+        if (text.innerHTML !== html) text.innerHTML = html;
+    }
+
+    function tomatoOutRow(msg, m, time, seen) {
+        const raw = m[0].trim();
+        const n = (seen.get(raw + '|' + time) || 0) + 1;
+        seen.set(raw + '|' + time, n);
+        const key = raw + '|' + time + '|' + n;
+        let rec = tomatoRows.get(key);
+        if (!rec) {
+            const run = tomatoRun && Date.now() <= tomatoRun.until ? tomatoRun : null;
+            rec = { run, host: !run || !run.host, gone: false };
+            if (run) {
+                run.host = true;
+                if (m[1]) run.landed.push(m[1]); else if (m[2]) run.waits++; else if (m[3]) run.missing.push(m[3]); else run.other++;
+            }
+            tomatoRows.set(key, rec);
+        }
+        return rec;
+    }
+    // Drawn after the whole list was counted: the line of a bundle sits on its FIRST answer, and
+    // the later ones must already be in its numbers.
+    function tomatoOutDraw(msg, m, time, rec) {
+        if (rec.gone || !rec.host) { if (!msg.hasAttribute('data-mcfo-tomato-gone')) msg.setAttribute('data-mcfo-tomato-gone', '1'); return; }
+        const html = rec.run ? tomatoRunText(rec.run)
+            : m[1] ? `Tomato sent to <b>${escapeHtml(m[1])}</b>`
+            : m[2] ? 'Tomato: that player is on cooldown, try again in a moment'
+            : m[3] ? `Tomato: <b>${escapeHtml(m[3])}</b> is not in the game`
+            : 'Tomato thrown';
+        tomatoNote(msg, html, time, rec);
+    }
+
     function tomatoPass(list) {
         const rows = list.querySelectorAll('article.mcf-chat__private');
+        const seen = new Map(), outs = [];
+        let open = false;
         for (const msg of rows) {
             const own = msg.querySelector(':scope > .mcfo-tomato');
             if (!settings.chatTomato) {
@@ -10120,12 +10221,19 @@
                 msg.removeAttribute('data-mcfo-tomato-gone');
                 continue;
             }
-            if (own) continue;
             const textEl = msg.querySelector(':scope > .mcf-chat__text');
-            const m = textEl && (textEl.textContent || '').match(TOMATO_IN_RE);
-            if (!m) continue;
             const time = [...msg.querySelectorAll(':scope > .mcf-chat__meta span')]
                 .map(x => x.textContent.trim()).find(t => /^\d{1,2}:\d{2}/.test(t)) || '';
+            const out = textEl && (textEl.textContent || '').match(TOMATO_OUT_RE);
+            if (out) {
+                const rec = tomatoOutRow(msg, out, time, seen);
+                outs.push([msg, out, time, rec]);
+                if (rec && rec.run && rec.host && rec.run.sent !== undefined && Date.now() <= rec.run.until + 1000) open = true;
+                continue;
+            }
+            if (own) continue;
+            const m = textEl && (textEl.textContent || '').match(TOMATO_IN_RE);
+            if (!m) continue;
             const key = m[1] + '|' + time;
             const note = document.createElement('div');
             note.className = 'mcfo-tomato';
@@ -10143,6 +10251,10 @@
             msg.appendChild(note);
             msg.setAttribute('data-mcfo-tomato', '1');
             if (tomatoGone.has(key)) msg.setAttribute('data-mcfo-tomato-gone', '1');
+        }
+        for (const o of outs) tomatoOutDraw(...o);
+        if (open && tomatoRun && !tomatoRun.finalTimer) {
+            tomatoRun.finalTimer = setTimeout(() => tomatoPass(list), Math.max(0, tomatoRun.until - Date.now()) + 200);
         }
     }
 
@@ -10174,22 +10286,21 @@
     function drawTomatoButton() {
         const on = !!settings.chatTomatoBtn && !signedOut();
         document.documentElement.setAttribute('data-mcfo-tombtn', on ? '1' : '0');
-        const header = chatRoot() && chatRoot().querySelector('.mcf-chat__header');
+        const form = chatRoot() && chatRoot().querySelector('[data-role="chat-form"]');
+        const send = form && form.querySelector('[data-role="chat-send"], .mcf-chat__send');
         let btn = document.querySelector('.mcfo-tomato-btn');
         if (!on) { if (btn) btn.remove(); return; }
-        if (!header || (btn && btn.parentElement === header)) return;
+        if (!form || !send || (btn && btn.nextElementSibling === send)) return;
         if (!btn) {
             btn = document.createElement('button');
             btn.type = 'button';
-            btn.className = 'mcfo-chatpop-btn mcfo-tomato-btn';   // the pop-out button's look, skins included
+            btn.className = 'mcfo-tomato-btn';
             btn.title = 'Throw tomatoes';
             btn.setAttribute('aria-label', 'Throw tomatoes');
             btn.innerHTML = TOMATO_ICON;
             btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); showTomatoPanel(btn); });
         }
-        // Left of the game's buttons, next to the title.
-        const first = header.querySelector('.mcf-chat__cosmetics-toggle, .mcfo-chatpop-btn:not(.mcfo-tomato-btn), [data-role="chat-collapse"]');
-        header.insertBefore(btn, first || null);
+        form.insertBefore(btn, send);   // type="button": it never submits the form
     }
 
     function showTomatoPanel(anchor) {
@@ -10251,6 +10362,8 @@
             const targets = tomatoPick.names.filter(n => tomatoPick.chosen.has(n));
             if (!targets.length || tomatoPick.busy) return;
             tomatoPick.busy = true; count();
+            // The answers to these throws are gathered into one line (tomatoPass).
+            tomatoRun = { targets, until: Infinity, landed: [], waits: 0, missing: [], other: 0, host: false };
             let sent = 0, why = '';
             for (const [i, n] of targets.entries()) {
                 if (i) await new Promise(r => setTimeout(r, TOMATO_GAP_MS));
@@ -10259,6 +10372,10 @@
                 if (menu.isConnected) say(`Thrown at ${sent} of ${targets.length} …`);
             }
             tomatoPick.busy = false;
+            tomatoRun.sent = sent;
+            // Answers come within a second as a rule; a little longer for a busy server.
+            tomatoRun.until = Date.now() + 10 * 1000;
+            chatPassSoon();
             if (!menu.isConnected) return;
             count();
             if (why) say(`${sent} of ${targets.length} thrown. ${why}.`, 'error');
@@ -10686,12 +10803,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.35.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.35.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.35.1', date: '2026-09-29', items: [
+            'The tomato button moved from the chat header to the message box, between the text field and Send.',
+            'All answers to one throw of the tomato button now come as ONE line in the chat, e.g. "Tomatoes: 12 landed \u00b7 2 on cooldown (names)", with an x to dismiss it. Answers to tomatoes you type yourself become one small line each, also with an x.',
+            'Header cards you can click (Current Points, Gold, Diamonds, the tileset card, your account) glow in your theme\'s colour while the pointer is on them.',
+        ] },
         { v: '6.35.0', date: '2026-09-29', items: [
             'Quest dots: while one of today\'s open quests asks for a Rebellion, a Royal Celebration or a beverage, its button carries a gold dot. In the Rebellion popup the tier the quest wants has a gold frame and a Quest tag, and the beverage panel names the quest and how far you are. Settings \u203a Shop and dailies \u203a Quest dots on Rebellion and beverages',
             'Tomato button in the chat header: tick one, several or All of the players you can throw at, and throw. Each throw is an ordinary !tomato line, so the chat shows what landed. Settings \u203a Chat \u203a Tomato button',

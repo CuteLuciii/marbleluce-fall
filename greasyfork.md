@@ -17,7 +17,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **Beverage bar** — the beverages as a compact bar, as symbols or with names.
 - **On the throne** — opt-in: when you take the crown, the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).
 - **Tomato notice** — a tomato thrown at you shows as one small line with the thrower's name instead of a picture, and an x dismisses it.
-- **Tomato button** — in the chat header: tick one, several or all of the players you can throw at, and throw. Each throw is the game's own !tomato line.
+- **Tomato button** — beside Send: tick one, several or all of the players you can throw at, and throw. Each throw is the game's own !tomato line, and the answers come back as one line you can dismiss.
 - **Enhanced chat** — hide system lines you don't need, text sizes, grouped messages, pop the chat out into a window, a compact cosmetics switch.
 - **Board fit** — the board sizes itself to your screen; see-through board frames.
 - **Loadouts** — a bar at the top of the inventory: build a loadout by clicking + Loadout on the items you want (nothing is equipped while you build), or save what you wear now; put it back on with one click, there or straight from the Current Points card. A loadout can cover every slot (crown with its random pool, chat colours, chat background, username style, King bubble, marble trail and border, royal titles and default tolls) or just a few; the rest stays as it is. Only what differs is changed, and an item you no longer have is skipped, never swapped for a namesake. Loadouts can be copied as a code and imported again, also to and from the MarbleMind Discord bot. Everything stays in your browser.
