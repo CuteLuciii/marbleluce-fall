@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.38.1
+// @version      6.38.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -10757,7 +10757,16 @@
     // The names are the list the game offers after "!tomato": /api/gameplay/chat-command/tomato-targets,
     // { ok, users: [{ playerId, displayName }] } — players in the game, not only those in the chat.
     const TOMATO_GAP_MS = 700;     // between two lines, so the chat does not take them for a flood
-    const tomatoPick = { names: [], at: 0, chosen: new Set(), busy: false };
+    const tomatoPick = { names: [], at: 0, chosen: new Set(), busy: false, all: false };
+    // "All" is kept as a choice of its own (6.38.2): while it is ticked, players who turn up later
+    // are ticked as well — when the popup opens and again right before a throw. Unticking anyone
+    // ends it. Remembered across reloads.
+    const TOMATO_ALL_KEY = 'mcfo_tomato_all';
+    try { tomatoPick.all = localStorage.getItem(TOMATO_ALL_KEY) === '1'; } catch (e) { /* blocked */ }
+    function tomatoSetAll(on) {
+        tomatoPick.all = !!on;
+        try { localStorage.setItem(TOMATO_ALL_KEY, on ? '1' : '0'); } catch (e) { /* blocked */ }
+    }
 
     async function loadTomatoTargets() {
         if (Date.now() - tomatoPick.at < 10 * 1000) return tomatoPick.names;
@@ -10829,15 +10838,20 @@
             // Picks from last time stay, as long as the player is still there: throwing at the
             // same few again after the cooldown is the usual case.
             for (const n of [...tomatoPick.chosen]) if (!names.includes(n)) tomatoPick.chosen.delete(n);
+            if (tomatoPick.all) names.forEach(n => tomatoPick.chosen.add(n));
             list.innerHTML = '';
             if (!names.length) {
                 list.innerHTML = '<div class="mcfo-tom__empty">Nobody to throw at right now.</div>';
             } else {
                 list.appendChild(row(`All (${names.length})`, false, on => {
+                    tomatoSetAll(on);
                     names.forEach(n => on ? tomatoPick.chosen.add(n) : tomatoPick.chosen.delete(n));
                     list.querySelectorAll('.mcfo-tom__row:not(.mcfo-tom__row--all) input').forEach(b => { b.checked = on; });
                 }, 'mcfo-tom__row--all'));
-                for (const n of names) list.appendChild(row(n, tomatoPick.chosen.has(n), on => on ? tomatoPick.chosen.add(n) : tomatoPick.chosen.delete(n)));
+                for (const n of names) list.appendChild(row(n, tomatoPick.chosen.has(n), on => {
+                    if (on) tomatoPick.chosen.add(n);
+                    else { tomatoPick.chosen.delete(n); tomatoSetAll(false); }
+                }));
             }
             count();
             placePanel(anchor, menu);
@@ -10849,6 +10863,12 @@
         go.addEventListener('click', async e => {
             e.preventDefault();
             e.stopPropagation();
+            if (tomatoPick.busy) return;
+            // With All on, whoever joined while the popup was open is taken along too.
+            if (tomatoPick.all) {
+                try { await loadTomatoTargets(); } catch (err) { /* the list we have will do */ }
+                tomatoPick.names.forEach(n => tomatoPick.chosen.add(n));
+            }
             const targets = tomatoPick.names.filter(n => tomatoPick.chosen.has(n));
             if (!targets.length || tomatoPick.busy) return;
             // The popup goes at once (Luce, 6.35.2); the throws carry on, and their answers come
@@ -11293,12 +11313,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.38.2', date: '2026-09-29', items: ['Tomato button: while All is ticked, players who turn up later are ticked as well, also right before you throw. Unticking anyone ends it; All stays ticked across reloads.'] },
         { v: '6.38.1', date: '2026-09-29', items: ['Flying tickets: every portion of tickets the game hands out gets its own flight, instead of being gathered for 30 seconds.'] },
         { v: '6.38.0', date: '2026-09-29', items: [
             'Click the Tickets card for your ticket history: earned and spent in the last hour, today and since you opened the page, why you are earning or not, and a way to the Leaderboards. Settings \u203a Header \u203a Ticket history on the Tickets card',
