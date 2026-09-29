@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.37.0
+// @version      6.37.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1368,7 +1368,7 @@
         html[data-mcfo-chatpop="1"] .mcfo-chatrail { display: none !important; }
         /* The header gets as many columns as it has buttons. The game plans three, the chat
            script four; with ours it can be five, and a fixed count makes the last one wrap. */
-        html[data-mcfo-popbtn="1"] .mcf-chat:not([data-collapsed="true"]) .mcf-chat__header {
+        html:is([data-mcfo-popbtn="1"], [data-mcfo-fpshead]) .mcf-chat:not([data-collapsed="true"]) .mcf-chat__header {
             grid-template-columns: minmax(0, 1fr) !important; grid-auto-flow: column; grid-auto-columns: auto;
         }
         .mcfo-chatpop-btn {
@@ -1452,7 +1452,6 @@
         .mcfo-nextev__time { color: #9fb2c2; flex: none; }
         /* Tickets card: the game's three-column grid (icon, text, an empty action column) gets a
            fourth column while the frame-rate badge sits in the third as well. */
-        [data-metric-role="tickets"]:has(> .mcfo-tstatus):has(> .mcfo-fps--card) { grid-template-columns: auto minmax(0, 1fr) auto auto !important; }
         .mcfo-tstatus { justify-self: end; align-self: center; display: grid; justify-items: end; gap: 1px;
                         font-size: 10px; line-height: 1.2; white-space: nowrap; color: #9fb2c2; cursor: default; }
         .mcfo-tstatus b { font-weight: 800; color: #d8e8f6; }
@@ -1877,7 +1876,7 @@
         .mcfo-fpspop__row { display: flex; justify-content: space-between; gap: 14px; }
         .mcfo-fpspop__row b { font-weight: 700; }
         .mcfo-fpspop__note { margin-top: 3px; color: #7f97ab; font-size: 10.5px; }
-        /* In the Tickets card (drawFpsMeter): a cell of its grid, right-aligned, no longer floating. */
+        /* In the chat header (drawFpsMeter, 6.37.1): one of its grid cells, no longer floating. */
         .mcfo-fps.mcfo-fps--card { position: static; z-index: auto; justify-self: end; align-self: center; }
         .mcfo-fps[data-mcfo-tone="low"] { color: #ffb4a8; border-color: #6f4a4a; }
         .mcfo-fps[data-mcfo-tone="mid"] { color: #ffd479; }
@@ -8388,9 +8387,7 @@
                 status = document.createElement('span');
                 status.className = 'mcfo-tstatus';
             }
-            // Before the frame-rate badge, so the status stays next to the numbers.
-            const fps = tickets.querySelector(':scope > .mcfo-fps');
-            if (status.parentElement !== tickets || (fps && status.nextElementSibling !== fps)) tickets.insertBefore(status, fps || null);
+            if (status.parentElement !== tickets) tickets.appendChild(status);   // the third, right-aligned column
             copySessionStatus(socket, status);
             if (!tstatusWatch || tstatusWatch.target !== socket) {
                 if (tstatusWatch) tstatusWatch.disconnect();
@@ -11065,12 +11062,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.37.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.37.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.37.1', date: '2026-09-29', items: [
+            'The loadouts menu on the Current Points card opens on the first click. It used to wait for the inventory first, so the first click seemed to do nothing, and a second click in that time closed it again.',
+            'The frame rate counter moved into the chat header; the Tickets card keeps only the Active line, right-aligned.',
+        ] },
         { v: '6.37.0', date: '2026-09-29', items: [
             'Mentions with nicknames: add the other words people call you (e.g. short forms of your name), separated by commas, and messages with them get the gold frame too. Settings \u203a Chat \u203a Highlight messages that mention you',
             'Type @ and the start of a name, then Tab: the name is filled in without the @, Tab again for the next match, Shift+Tab goes back. Names come from the chat and from the players in the game. Settings \u203a Chat \u203a Complete names with @ and Tab',
@@ -11838,7 +11839,7 @@
         }
         // Not part of any level: a measuring tool, not a saving.
         levers.appendChild(plainSwitchItem({ key: 'perfFpsMeter', label: 'Show frame rate',
-            hint: 'A small counter bottom right, to compare the levels on your own machine.' }));
+            hint: 'A small counter in the chat header, to compare the levels on your own machine.' }));
         card.appendChild(levers);
         return card;
     }
@@ -14354,19 +14355,25 @@
     // The saved loadouts as a menu; one click puts one on, the result comes as a short notice.
     // The last one put on this way carries a tick — a reminder, not a check of what you wear.
     const LO_LAST = 'mcfo_lo_last';
-    async function showLoadoutMenu(anchor) {
-        if (openMenu && openMenu.anchor === anchor) { closeMenus(); return; }
-        try { await loKnowPlayer(); } catch (e) { notice(loEsc(e.message || e), 'error'); return; }
-        let last = '';
-        try { last = localStorage.getItem(LO_LAST) || ''; } catch (e) { /* blocked */ }
-        const list = Object.values(loMine()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-        showPanel(anchor, 'mcfo-menu--lo', m => {
-            m.innerHTML = '<div class="mcfo-lo__head">Put on a loadout</div>';
+    // Opens at once (6.37.1). It used to wait for the player id first — a fetch of the crown
+    // inventory, a second or two on a busy evening — so the first click seemed to do nothing,
+    // and a second click in that time opened it and closed it again straight after.
+    function showLoadoutMenu(anchor) {
+        const menu = showPanel(anchor, 'mcfo-menu--lo', m => {
+            m.innerHTML = '<div class="mcfo-lo__head">Put on a loadout</div><div class="mcfo-lo__empty">Loading \u2026</div>';
+        });
+        if (!menu) return;   // a second click on the card: showPanel closed it
+        const fill = () => {
+            if (!menu.isConnected) return;
+            let last = '';
+            try { last = localStorage.getItem(LO_LAST) || ''; } catch (e) { /* blocked */ }
+            const list = Object.values(loMine()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+            menu.querySelector('.mcfo-lo__empty')?.remove();
             if (!list.length) {
                 const p = document.createElement('div');
                 p.className = 'mcfo-lo__empty';
                 p.textContent = 'No loadouts saved yet. Save what you wear in the inventory, on the Loadouts bar.';
-                m.appendChild(p);
+                menu.appendChild(p);
             }
             for (const l of list) {
                 const b = document.createElement('button');
@@ -14377,14 +14384,20 @@
                 b.innerHTML = `<b>${loEsc(l.name)}</b><small>${n} slot${n === 1 ? '' : 's'}</small>`;
                 b.disabled = lo.busy;
                 b.addEventListener('click', ev => { ev.stopPropagation(); closeMenus(); loQuickPutOn(l); });
-                m.appendChild(b);
+                menu.appendChild(b);
             }
-            m.appendChild(document.createElement('hr'));
+            menu.appendChild(document.createElement('hr'));
             const inv = document.createElement('button');
             inv.type = 'button';
-            inv.textContent = 'Manage loadouts …';
+            inv.textContent = 'Manage loadouts \u2026';
             inv.addEventListener('click', ev => { ev.stopPropagation(); closeMenus(); openPage('/inventory', 'Inventory'); });
-            m.appendChild(inv);
+            menu.appendChild(inv);
+            placePanel(anchor, menu);   // the height is only known now
+        };
+        if (loPlayerNow()) { fill(); return; }
+        loKnowPlayer().then(fill).catch(e => {
+            const p = menu.isConnected && menu.querySelector('.mcfo-lo__empty');
+            if (p) p.textContent = e.message || String(e);
         });
     }
     async function loQuickPutOn(l) {
@@ -14408,8 +14421,15 @@
         try { await job(); } catch (e) { loSay(loEsc(e.message || e), 'error'); }
         lo.busy = false; loRedraw();
     }
+    // The dailies (12d) are read at start-up anyway and name the viewer — the same id the
+    // inventory answers with, without asking the inventory.
+    function loPlayerNow() {
+        const viewer = daily.data && daily.data.viewer && daily.data.viewer.playerId;
+        if (!lo.player && viewer) lo.player = String(viewer);
+        return lo.player;
+    }
     async function loKnowPlayer() {
-        if (lo.player) return lo.player;
+        if (loPlayerNow()) return lo.player;
         const r = await loFetch('/api/inventory/crowns');
         if (r.data && r.data.playerId) lo.player = String(r.data.playerId);
         if (!lo.player) throw new Error('Sign in to use loadouts.');
@@ -14961,6 +14981,7 @@
     function drawFpsMeter() {
         if (!settings.perfFpsMeter) {
             if (fpsBadge) fpsBadge.hidden = true;
+            document.documentElement.removeAttribute('data-mcfo-fpshead');
             if (fpsPop) { fpsPinned = false; fpsHover = false; fpsPop.hidden = true; }
             if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
             fpsLoopOn = false;
@@ -14973,17 +14994,21 @@
             fpsBadgeWire(fpsBadge);
         }
         fpsBadge.hidden = false;
-        // In the Tickets card, right-aligned. The card is a three-column grid — icon, text, and an
-        // action column the Tickets card leaves empty (metricCellDom in app.js) — so the badge
-        // simply takes that last column. Floating above the footer it sat half over the chat's
-        // Send button. Where the card is not shown (the narrow layouts use tickets-compact
-        // instead) it floats as before. Checked on every apply() pass, so it follows the layout.
-        const card = document.querySelector('[data-role="metric-cell"][data-metric-role="tickets"]');
-        if (card && card.getBoundingClientRect().width > 0) {
-            if (fpsBadge.parentElement !== card) card.appendChild(fpsBadge);
+        // In the chat header, left of its buttons (6.37.1, Luce: there is room, and the Tickets
+        // card now carries the game's Active line). Up to 6.37.0 it sat in the Tickets card.
+        // Where the header is not shown — chat collapsed to the rail, or a narrow layout without
+        // the chat pane — it floats above the footer as before. Checked on every apply() pass,
+        // so it follows the layout.
+        const chat = chatRoot();
+        const header = chat && chat.getAttribute('data-collapsed') !== 'true' && chat.querySelector('.mcf-chat__header');
+        const first = header && header.querySelector(':scope > button, :scope > .mcfo-tomato-btn');
+        if (header && first && header.getBoundingClientRect().width > 0) {
+            if (fpsBadge.parentElement !== header || fpsBadge.nextElementSibling !== first) header.insertBefore(fpsBadge, first);
             fpsBadge.classList.add('mcfo-fps--card');
             fpsBadge.style.bottom = '';
+            document.documentElement.setAttribute('data-mcfo-fpshead', '1');
         } else {
+            document.documentElement.removeAttribute('data-mcfo-fpshead');
             if (fpsBadge.parentElement !== document.body) document.body.appendChild(fpsBadge);
             fpsBadge.classList.remove('mcfo-fps--card');
             const footer = role('action-region');
