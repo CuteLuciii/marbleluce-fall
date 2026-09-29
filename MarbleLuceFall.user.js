@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.39.2
+// @version      6.40
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1637,6 +1637,12 @@
         .mcfo-menu button.mcfo-ani__row--joined:hover { background: #351c19; }
         .mcfo-menu button.mcfo-ani__row--joined .mcfo-ani__live { color: #f3a4a4; }
         .mcfo-menu button.mcfo-ani__row--joined .mcfo-ani__call { color: #ffc9c2; }
+        .mcfo-ani__next { margin: -2px 0 6px; padding: 5px 7px; border-radius: 5px; font-size: 12px; font-weight: 700;
+                          background: #2a2113; color: #f2c98a; }
+        .mcfo-ani__next[data-ready] { background: #16281a; color: #9fdc92; }
+        .mcfo-menu button.mcfo-ani__row--rest { opacity: 0.55; }
+        .mcfo-menu button.mcfo-ani__row--rest:hover { opacity: 0.85; }
+        .mcfo-ani__rest { grid-column: 2 / -1; margin-top: -4px; font-size: 11px; color: #e9b37a; white-space: nowrap; }
         .mcfo-ani__foot { margin-top: 8px; font-size: 11px; line-height: 1.35; color: #8da2b7; }
         .mcfo-menu--tomato { width: 250px; padding: 10px 12px 12px; }
         .mcfo-tom__head { font-weight: 800; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: #ff9a8a;
@@ -11030,38 +11036,83 @@
         return rec;
     }
 
-    // The gathering running now, as far as the chat shows it: the latest animal line, the lines
-    // of the same animal before it that are less than 10 minutes apart, and the end 10 minutes
-    // after the last of them. mine: one of those lines is yours, so you are in already (6.39.1) —
-    // or the game said so privately ("You're already part of the pack.") after the first of them.
+    // Every gathering the chat shows, one chain per animal: lines of the same animal less than 10
+    // minutes apart. A chain ends 10 minutes after its last line.
+    function animalChains(list) {
+        const recs = [...list.querySelectorAll('article.mcf-chat__message:not(.mcf-chat__private)')].map(animalRow).filter(Boolean);
+        recs.sort((a, b) => a.at - b.at);
+        const open = new Map(), chains = [];
+        for (const r of recs) {
+            let c = open.get(r.animal);
+            if (!c || r.at - c.last.at > ANIMAL_GATHER_MS) {
+                c = { animal: r.animal, recs: [], first: r, last: r };
+                open.set(r.animal, c);
+                chains.push(c);
+            }
+            c.recs.push(r);
+            c.last = r;
+        }
+        for (const c of chains) c.ends = c.last.at + ANIMAL_GATHER_MS;
+        return chains;
+    }
+
+    // The ends of gatherings seen, per animal, kept across reloads (6.40): the chat holds only
+    // its last lines, the cooldowns run an hour. { animalId: endMs }, older than two hours dropped.
+    const ANIMAL_ENDS_KEY = 'mcfo_animal_ends';
+    const ANIMAL_REST_MS = 60 * 60 * 1000;    // the same animal: an hour after its gathering ended
+    const ANIMAL_PAUSE_MS = 10 * 60 * 1000;   // any animal: at least 10 minutes after the last one ended
+    let animalEnds = {};
+    try { animalEnds = JSON.parse(localStorage.getItem(ANIMAL_ENDS_KEY) || '{}') || {}; } catch (e) { animalEnds = {}; }
+    function animalRemember(chains) {
+        let changed = false;
+        for (const c of chains) {
+            // A running gathering is not over yet: its end still moves with every join.
+            if (c.ends > Date.now()) continue;
+            if (!(animalEnds[c.animal.id] >= c.ends)) { animalEnds[c.animal.id] = c.ends; changed = true; }
+        }
+        for (const [id, t] of Object.entries(animalEnds)) {
+            if (!(Date.now() - t < ANIMAL_REST_MS + ANIMAL_PAUSE_MS * 6)) { delete animalEnds[id]; changed = true; }
+        }
+        if (changed) { try { localStorage.setItem(ANIMAL_ENDS_KEY, JSON.stringify(animalEnds)); } catch (e) { /* blocked */ } }
+    }
+
+    // The gathering running now: the chain with the latest line, while its 10 minutes last.
+    // mine: one of its lines is yours, so you are in already (6.39.1) — or the game said so
+    // privately ("You're already part of the pack.") after its first line.
     function animalGathering() {
         const list = document.querySelector(CHAT_LIST_SEL);
         if (!list) return null;
-        const recs = [...list.querySelectorAll('article.mcf-chat__message:not(.mcf-chat__private)')].map(animalRow).filter(Boolean);
-        if (!recs.length) return null;
-        recs.sort((a, b) => a.at - b.at);
-        const last = recs[recs.length - 1];
-        const ends = last.at + ANIMAL_GATHER_MS;
-        if (Date.now() >= ends) return null;
+        const chains = animalChains(list);
+        animalRemember(chains);
+        if (!chains.length) return null;
+        const c = chains.reduce((x, y) => (y.last.at >= x.last.at ? y : x));
+        if (Date.now() >= c.ends) return null;
         const me = (accountName() || '').toLowerCase();
-        let joined = last.n, prev = last.at, mine = !!me && last.who === me, first = last;
-        for (let i = recs.length - 2; i >= 0; i--) {
-            const r = recs[i];
-            if (r.animal !== last.animal) continue;
-            if (prev - r.at > ANIMAL_GATHER_MS) break;
-            joined = Math.max(joined, r.n);
-            if (me && r.who === me) mine = true;
-            prev = r.at;
-            first = r;
-        }
-        if (!mine && first.msg.isConnected) {
+        let mine = !!me && c.recs.some(r => r.who === me);
+        if (!mine && c.first.msg.isConnected) {
             for (const p of list.querySelectorAll('article.mcf-chat__private')) {
-                if (!(first.msg.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+                if (!(c.first.msg.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
                 if (/already part of the/i.test(p.querySelector('.mcf-chat__text')?.textContent || p.textContent || '')) { mine = true; break; }
             }
         }
-        return { animal: last.animal, joined, ends, mine };
+        return { animal: c.animal, joined: Math.max(...c.recs.map(r => r.n)), ends: c.ends, mine };
     }
+
+    // When a new gathering can start at the earliest (6.40), as far as the gatherings seen tell:
+    // pause = for every animal (the one running, or the 10 minutes after the last one);
+    // rest = per animal, an hour after its own gathering ended.
+    function animalCooldowns(g) {
+        const now = Date.now();
+        const lastEnd = Math.max(0, ...Object.values(animalEnds));
+        const pauseUntil = Math.max(g ? g.ends + ANIMAL_PAUSE_MS : 0, lastEnd + ANIMAL_PAUSE_MS);
+        const rest = {};
+        for (const a of ANIMAL_CALLS) {
+            const t = (animalEnds[a.id] || 0) + ANIMAL_REST_MS;
+            if (t > now) rest[a.id] = t;
+        }
+        return { pause: pauseUntil > now ? pauseUntil : 0, rest };
+    }
+    const minsFrom = t => Math.max(1, Math.ceil((t - Date.now()) / 60000));
     function animalLiveText(g) {
         const min = Math.max(1, Math.round((g.ends - Date.now()) / 60000));
         return `${g.joined} joined, ~${min} min left`;
@@ -11094,9 +11145,14 @@
 
     function showAnimalPanel(anchor) {
         const g = animalGathering();
+        const cd = animalCooldowns(g);
         const menu = showPanel(anchor, 'mcfo-menu--animals', m => {
-            m.innerHTML = '<div class="mcfo-ani__head">Animal calls</div><div class="mcfo-ani__list"></div>'
-                + '<div class="mcfo-ani__foot">One gathering at a time; each call joins it. The same animal rests for an hour after its gathering.</div>';
+            m.innerHTML = '<div class="mcfo-ani__head">Animal calls</div><div class="mcfo-ani__next"></div><div class="mcfo-ani__list"></div>'
+                + '<div class="mcfo-ani__foot">One gathering at a time; each call joins it. After one ends, the next can start 10 minutes later at the earliest, and the same animal rests for an hour. Times count from the gatherings this tab has seen in the chat.</div>';
+            const next = m.querySelector('.mcfo-ani__next');
+            // Only one gathering at a time: while it runs or right after, no other animal starts.
+            if (cd.pause) next.textContent = `Next new gathering in ~${minsFrom(cd.pause)} min`;
+            else { next.textContent = 'A new gathering can start now'; next.setAttribute('data-ready', ''); }
             const list = m.querySelector('.mcfo-ani__list');
             const order = g ? [g.animal, ...ANIMAL_CALLS.filter(a => a !== g.animal)] : ANIMAL_CALLS;
             for (const a of order) {
@@ -11113,6 +11169,13 @@
                     sub.className = 'mcfo-ani__live';
                     sub.textContent = (g.mine ? 'You are in: ' : 'Gathering: ') + animalLiveText(g);
                     b.appendChild(sub);   // a row of its own, across name and call
+                } else if (cd.rest[a.id] && cd.rest[a.id] > cd.pause) {
+                    // Its own hour outlasts the pause for all: worth saying per animal.
+                    b.classList.add('mcfo-ani__row--rest');
+                    const sub = document.createElement('span');
+                    sub.className = 'mcfo-ani__rest';
+                    sub.textContent = `Resting, ~${minsFrom(cd.rest[a.id])} min`;
+                    b.appendChild(sub);
                 }
                 b.title = 'Send !' + a.call;
                 b.addEventListener('click', e => {
@@ -11549,12 +11612,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.39.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.40';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.40', date: '2026-09-29', items: [
+            'Animal call button: the popup now says when the next gathering can start (after one ends there is a pause of at least 10 minutes), and animals still resting from their own gathering (an hour) are greyed out with the minutes left. The times come from the gatherings your tab has seen in the chat and are kept across reloads.',
+        ] },
         { v: '6.39.2', date: '2026-09-29', items: [
             'Animal call button: "Joined" now also turns red for players with a name flourish (the diamond or wing after the name), and when the game answers "You\'re already part of ...".',
             'Chat: with a name flourish, @ + Tab no longer puts the flourish into the completed name, and your own messages are no longer highlighted as mentions.',
