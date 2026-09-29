@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.38.4
+// @version      6.39
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -327,6 +327,8 @@
               hint: 'When someone throws a tomato at you, the chat shows one small line with their name instead of the picture, with an x to dismiss it. The answers to your own throws become small lines too; thrown with the tomato button, all answers of one throw are one line.' },
             { key: 'chatTomatoBtn', label: 'Tomato button',
               hint: 'A tomato between the message box and Send. It lists the players you can throw at (the same list the game offers for !tomato): tick one, several or All, and throw. Each throw goes out as an ordinary !tomato line in the chat.' },
+            { key: 'chatAnimalBtn', label: 'Animal call button',
+              hint: 'A paw next to the tomato. It lists every animal call (!howl, !honk, ...): one click sends it. While a gathering runs in the chat, its animal stands on top with how many have joined and roughly how long it goes on, and the paw gets a dot.' },
             { key: 'chatMentions', label: 'Highlight messages that mention you',
               hint: 'A message with your name in it (with or without @) gets a gold frame, so it stands out while the chat runs on. Your own messages are left out. Nicknames: other words that mean you, separated by commas.',
               sub: { key: 'chatMentionNames', type: 'text', label: 'Nicknames', def: '', placeholder: 'e.g. lucie, luce', run: () => mentionRefresh() } },
@@ -1597,6 +1599,39 @@
             align-self: end; height: var(--mcfo-chatgrow-line, auto);
         }
         .mcfo-tomato-btn svg { width: 18px; height: 18px; }
+
+        /* === ANIMAL CALL BUTTON (6.39, section 9j) === */
+        /* Left of the tomato, same size; a fourth column while both are there. */
+        .mcf-chat__form:has(> .mcfo-animal-btn) { grid-template-columns: minmax(0, 1fr) auto auto !important; }
+        .mcf-chat__form:has(> .mcfo-animal-btn):has(> .mcfo-tomato-btn) { grid-template-columns: minmax(0, 1fr) auto auto auto !important; }
+        .mcfo-animal-btn {
+            position: relative; align-self: stretch; width: 38px; min-height: 30px; padding: 0; box-sizing: border-box;
+            display: grid; place-items: center;
+            border: 1px solid #355066; border-radius: 7px; background: #111f2b; color: #e9c9a0; cursor: pointer;
+        }
+        .mcfo-animal-btn:hover { border-color: #b08a4a; background: #251d12; }
+        html[data-mcfo-chatgrow="1"] .mcf-chat__form:has(.mcfo-chatgrow) > .mcfo-animal-btn {
+            align-self: end; height: var(--mcfo-chatgrow-line, auto);
+        }
+        .mcfo-animal-btn svg { width: 18px; height: 18px; }
+        .mcfo-animal-btn[data-mcfo-live]::after {
+            content: ''; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%;
+            background: #7ad36b; box-shadow: 0 0 0 2px #111f2b;
+        }
+        .mcfo-menu--animals { width: 270px; padding: 10px 12px 12px; }
+        .mcfo-ani__head { font-weight: 800; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: #f2c98a;
+                          padding-bottom: 7px; border-bottom: 1px solid #243443; margin-bottom: 6px; }
+        .mcfo-ani__list { max-height: min(360px, 55vh); overflow: auto; display: grid; gap: 1px; }
+        .mcfo-menu button.mcfo-ani__row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+                                          padding: 5px 6px; border-radius: 5px; text-align: left; }
+        .mcfo-ani__emoji { font-size: 16px; line-height: 1; text-align: center; }
+        .mcfo-ani__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mcfo-ani__call { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #8da2b7; }
+        .mcfo-menu button.mcfo-ani__row--live { border: 1px solid #4f8a45; background: #16281a; margin-bottom: 5px; }
+        .mcfo-menu button.mcfo-ani__row--live:hover { background: #1d3622; }
+        .mcfo-ani__live { grid-column: 2 / -1; margin-top: -4px; font-size: 11px; color: #9fdc92; white-space: nowrap; }
+        .mcfo-menu button.mcfo-ani__row--live .mcfo-ani__call { color: #cfeec8; font-weight: 800; }
+        .mcfo-ani__foot { margin-top: 8px; font-size: 11px; line-height: 1.35; color: #8da2b7; }
         .mcfo-menu--tomato { width: 250px; padding: 10px 12px 12px; }
         .mcfo-tom__head { font-weight: 800; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: #ff9a8a;
                           padding-bottom: 7px; border-bottom: 1px solid #243443; margin-bottom: 6px; }
@@ -3242,7 +3277,7 @@
     // it was one signal too many. Left out of every skin's :hover rule.
     const SKIN_HOVERLESS = ['.mcfo-signpost', '[data-role="diamonds-purchase-link"]'];
     const SKIN_BUTTONS = [
-        '.mcf-chat__send', '.mcf-chat__cosmetics-toggle', '.mcf-chat__collapse', '.mcfo-chatpop-btn', '.mcfo-tomato-btn',
+        '.mcf-chat__send', '.mcf-chat__cosmetics-toggle', '.mcf-chat__collapse', '.mcfo-chatpop-btn', '.mcfo-tomato-btn', '.mcfo-animal-btn',
         '.mcfo-taskbar button', '.mcfo-win__head button', '[data-role="sound-utility-toggle"]',
         '.mcfo-rebellion', '.mcfo-rail-toggle', '.mcfo-unbid', '.mcfo-autobid',
         '[data-action="king-attack"]', '.mcfo-attack', '.mcfo-signpost',
@@ -10898,6 +10933,173 @@
         });
     }
 
+    // --- Animal calls (6.39) ---
+    // The hidden gathering commands of game v0.10.0b: a call (!howl) starts or joins the gathering
+    // of one animal. The game shows nobody which word belongs to which animal, so the list is
+    // written down here (the MarbleMind bot found them all). Emojis are built from code points:
+    // the source stays ASCII.
+    // What the chat shows of a gathering: each joiner's line turns into the animal's emoji, the
+    // n-th joiner gets n of them (from the fifth on the row is decorated, so they are counted, not
+    // matched). A gathering ends 10 minutes after the LAST join, one runs at a time.
+    const cp = (...c) => String.fromCodePoint(...c);
+    const ANIMAL_CALLS = [
+        ['bee', 'buzz', [cp(0x1F41D)]],
+        ['cat', 'meow', [cp(0x1F431), cp(0x1F408)]],
+        ['cow', 'moo', [cp(0x1F42E), cp(0x1F404)]],
+        ['crow', 'caw', [cp(0x1F426, 0x200D, 0x2B1B), cp(0x1F426)]],
+        ['dog', 'woof', [cp(0x1F436), cp(0x1F415)]],
+        ['duck', 'quack', [cp(0x1F986)]],
+        ['elephant', 'trumpet', [cp(0x1F418)]],
+        ['fox', 'yip', [cp(0x1F98A)]],
+        ['frog', 'croak', [cp(0x1F438)]],
+        ['goose', 'honk', [cp(0x1FABF)]],
+        ['horse', 'neigh', [cp(0x1F434), cp(0x1F40E)]],
+        ['lion', 'roar', [cp(0x1F981)]],
+        ['mouse', 'squeak', [cp(0x1F42D), cp(0x1F401)]],
+        ['owl', 'hoot', [cp(0x1F989)]],
+        ['pig', 'oink', [cp(0x1F437), cp(0x1F416)]],
+        ['sheep', 'baa', [cp(0x1F411)]],
+        ['wolf', 'howl', [cp(0x1F43A)]],
+    ].map(([id, call, emojis]) => ({ id, call, emojis, label: id[0].toUpperCase() + id.slice(1) }));
+    const ANIMAL_GATHER_MS = 10 * 60 * 1000;
+    const PAW_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">'
+        + '<ellipse cx="6" cy="10" rx="2.2" ry="2.8"/><ellipse cx="10" cy="5.8" rx="2.2" ry="2.9"/>'
+        + '<ellipse cx="14" cy="5.8" rx="2.2" ry="2.9"/><ellipse cx="18" cy="10" rx="2.2" ry="2.8"/>'
+        + '<path d="M12 11c-3 0-6.5 4.2-6.5 6.6 0 2 1.7 2.6 3.3 2.2 1.2-.3 2.1-.8 3.2-.8s2 .5 3.2.8c1.6.4 3.3-.2 3.3-2.2 0-2.4-3.5-6.6-6.5-6.6z"/>'
+        + '</svg>';
+
+    // Which animal a chat line is a gathering line of, and the joiner's place — or null. Only
+    // lines of nothing but emojis count: someone writing about wolves is no wolf.
+    function animalOfText(text) {
+        const raw = String(text || '').trim().replace(/\uFE0F/g, '');
+        if (!raw || /[\p{L}\p{N}]/u.test(raw)) return null;
+        let best = null, tie = false;
+        for (const a of ANIMAL_CALLS) {
+            // Per animal the most of any of its spellings: the black crow contains the bird.
+            const n = Math.max(...a.emojis.map(e => raw.split(e).length - 1));
+            if (!n) continue;
+            if (!best || n > best.n) { best = { animal: a, n }; tie = false; }
+            else if (n === best.n) tie = true;
+        }
+        return best && !tie ? best : null;
+    }
+
+    // The chat's own clock is minutes only ("7:42" or "7:42 PM", the viewer's locale). A line
+    // seen arriving gets the real moment; an older one the middle of its minute.
+    const animalRows = new WeakMap();
+    function chatRowTime(msg) {
+        const t = [...msg.querySelectorAll('.mcf-chat__meta span, .mcf-chat__meta')]
+            .map(x => x.textContent.trim().match(/(\d{1,2}):(\d{2})\s*([AaPp])?\.?\s*[Mm]?/)).find(Boolean);
+        if (!t) return null;
+        let h = +t[1];
+        if (t[3]) h = (h % 12) + (/p/i.test(t[3]) ? 12 : 0);
+        const d = new Date();
+        d.setHours(h, +t[2], 30, 0);
+        if (d.getTime() > Date.now() + 60 * 1000) d.setDate(d.getDate() - 1);
+        return d.getTime();
+    }
+    function animalRow(msg) {
+        if (animalRows.has(msg)) return animalRows.get(msg);
+        const hit = animalOfText(msg.querySelector('.mcf-chat__text')?.textContent);
+        let rec = null;
+        if (hit) {
+            const shown = chatRowTime(msg);
+            // Within the current minute: it just came in, now is better than the minute.
+            const at = shown === null || Math.abs(Date.now() - shown) < 60 * 1000 ? Date.now() : shown;
+            rec = { animal: hit.animal, n: hit.n, at };
+        }
+        animalRows.set(msg, rec);
+        return rec;
+    }
+
+    // The gathering running now, as far as the chat shows it: the latest animal line, the lines
+    // of the same animal before it that are less than 10 minutes apart, and the end 10 minutes
+    // after the last of them.
+    function animalGathering() {
+        const list = document.querySelector(CHAT_LIST_SEL);
+        if (!list) return null;
+        const recs = [...list.querySelectorAll('article.mcf-chat__message:not(.mcf-chat__private)')].map(animalRow).filter(Boolean);
+        if (!recs.length) return null;
+        recs.sort((a, b) => a.at - b.at);
+        const last = recs[recs.length - 1];
+        const ends = last.at + ANIMAL_GATHER_MS;
+        if (Date.now() >= ends) return null;
+        let joined = last.n, prev = last.at;
+        for (let i = recs.length - 2; i >= 0; i--) {
+            const r = recs[i];
+            if (r.animal !== last.animal) continue;
+            if (prev - r.at > ANIMAL_GATHER_MS) break;
+            joined = Math.max(joined, r.n);
+            prev = r.at;
+        }
+        return { animal: last.animal, joined, ends };
+    }
+    function animalLiveText(g) {
+        const min = Math.max(1, Math.round((g.ends - Date.now()) / 60000));
+        return `${g.joined} joined, ~${min} min left`;
+    }
+
+    function drawAnimalButton() {
+        const on = !!settings.chatAnimalBtn && !signedOut();
+        const form = chatRoot() && chatRoot().querySelector('[data-role="chat-form"]');
+        const send = form && form.querySelector('[data-role="chat-send"], .mcf-chat__send');
+        let btn = document.querySelector('.mcfo-animal-btn');
+        if (!on) { if (btn) btn.remove(); return; }
+        if (!form || !send) return;
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mcfo-animal-btn';
+            btn.setAttribute('aria-label', 'Animal calls');
+            btn.innerHTML = PAW_ICON;
+            btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); showAnimalPanel(btn); });
+        }
+        // Left of the tomato when that is there, else right before Send.
+        const tomato = form.querySelector(':scope > .mcfo-tomato-btn');
+        const next = tomato || send;
+        if (btn.nextElementSibling !== next) form.insertBefore(btn, next);   // type="button": never submits
+        const g = animalGathering();
+        btn.toggleAttribute('data-mcfo-live', !!g);
+        btn.title = g ? `Animal calls - ${g.animal.label} gathering: ${animalLiveText(g)}` : 'Animal calls';
+    }
+
+    function showAnimalPanel(anchor) {
+        const g = animalGathering();
+        const menu = showPanel(anchor, 'mcfo-menu--animals', m => {
+            m.innerHTML = '<div class="mcfo-ani__head">Animal calls</div><div class="mcfo-ani__list"></div>'
+                + '<div class="mcfo-ani__foot">One gathering at a time; each call joins it. The same animal rests for an hour after its gathering.</div>';
+            const list = m.querySelector('.mcfo-ani__list');
+            const order = g ? [g.animal, ...ANIMAL_CALLS.filter(a => a !== g.animal)] : ANIMAL_CALLS;
+            for (const a of order) {
+                const live = !!g && a === g.animal;
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'mcfo-ani__row' + (live ? ' mcfo-ani__row--live' : '');
+                b.innerHTML = '<span class="mcfo-ani__emoji"></span><span class="mcfo-ani__name"></span><span class="mcfo-ani__call"></span>';
+                b.querySelector('.mcfo-ani__emoji').textContent = a.emojis[0];
+                b.querySelector('.mcfo-ani__name').textContent = a.label;
+                b.querySelector('.mcfo-ani__call').textContent = live ? 'Join !' + a.call : '!' + a.call;
+                if (live) {
+                    const sub = document.createElement('span');
+                    sub.className = 'mcfo-ani__live';
+                    sub.textContent = 'Gathering: ' + animalLiveText(g);
+                    b.appendChild(sub);   // a row of its own, across name and call
+                }
+                b.title = 'Send !' + a.call;
+                b.addEventListener('click', e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeMenus();
+                    // A refusal ("The pack is resting.") comes back as the game's own chat line.
+                    const r = sendChatLine('!' + a.call);
+                    if (!r.ok) notice(escapeHtml(`!${a.call} not sent. ${r.why}.`), 'error');
+                });
+                list.appendChild(b);
+            }
+        });
+        if (menu) placePanel(anchor, menu);
+    }
+
     // =========================================================================================
     // 9h. GROWING MESSAGE BOX
     // =========================================================================================
@@ -11318,12 +11520,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.4';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.39';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.39', date: '2026-09-29', items: [
+            'Animal call button: a paw next to the tomato lists all 17 animal calls (!howl, !honk, !croak, ...); one click sends the call. While a gathering runs in the chat, its animal stands on top with how many have joined and about how long it goes on, and the paw gets a green dot. Switch: Settings \u203a Chat \u203a Animal call button.',
+        ] },
         { v: '6.38.4', date: '2026-09-29', items: [
             'Inventory \u203a Royal Title: "Your Royal Titles" shows how many you have; the tooltip says how many of them every player has.',
             'The Profile and Leaderboards windows lose their own dark page ground: see-through like the other windows, with your theme\'s pattern or Deluxe background, and without their own header bar.',
@@ -15383,6 +15588,7 @@
         drawChatRail();
         drawChatPop();
         drawTomatoButton();
+        drawAnimalButton();
         applyChatPlus();
         applyChatGrow();
         applyChatStick();
