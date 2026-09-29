@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.38.0
+// @version      6.38.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -245,7 +245,7 @@
             { key: 'ticketHistory', label: 'Ticket history on the Tickets card',
               hint: 'Click the Tickets card: tickets earned and spent in the last hour, today and since you opened the page, and why you are earning or not. Counted in this browser while the game is open in a tab.' },
             { key: 'ticketFly', label: 'Flying tickets',
-              hint: 'When tickets come in, a few small tickets and the amount fly out of the Tickets card — gathered, at most every 30 seconds, since tickets come in a few at a time. Left out at the Maximum performance level and when your system asks for less motion.' },
+              hint: 'When tickets come in, a few small tickets and the amount fly out of the Tickets card, once for every portion the game hands out. Left out at the Maximum performance level and when your system asks for less motion.' },
             { key: 'sessionNext', label: 'Next tileset on the tileset card',
               hint: 'The tileset card reads "Current: ..." and below it "Next: ..." with the start time. The game\'s Active / Inactive line moves over to the Tickets card.' },
             { key: 'eventsPanel', label: 'Upcoming tilesets',
@@ -8481,7 +8481,7 @@
     let tixSeen = null;   // the last value THIS tab saw, for the flying tickets (another tab may count first)
 
     // --- Flying tickets (6.38) ---
-    // When the balance has risen (gathered, see tixFlyGain): 2 to 7 small tickets (more for more tickets, on a log scale)
+    // When the balance has risen (see tixFlyGain): 2 to 7 small tickets (more for more tickets, on a log scale)
     // and "+N" rise from the number on the card and fade out within a second. Only in a visible
     // tab, never at the Maximum performance level or with reduced motion asked for, and never for
     // the first reading of a page (that is catching up, not earning). A watcher on the number
@@ -8522,17 +8522,18 @@
         document.body.appendChild(layer);
         setTimeout(() => layer.remove(), 1700);
     }
-    // Tickets come in with time, about nine a minute, a few at a time: one burst for every
-    // update would never stop. The gains are gathered and fly together, at most every 30 s.
-    const TIX_FLY_GAP_MS = 30 * 1000;
-    const tixFly = { pending: 0, last: 0 };
+    // The game already hands tickets out in portions (a few every couple of minutes), so every
+    // portion gets its own flight (6.38.1; 6.38.0 gathered them for 30 s, which was not needed).
+    // Only two rises within 3 s become one, so one portion written twice never flies twice.
+    const TIX_FLY_GAP_MS = 3 * 1000;
+    const tixFly = { pending: 0, last: 0, timer: 0 };
     function tixFlyGain(gain) {
+        if (!gain) return;
         tixFly.pending += gain;
-        if (!tixFly.pending || Date.now() - tixFly.last < TIX_FLY_GAP_MS) return;
-        tixFly.last = Date.now();
-        const n = tixFly.pending;
-        tixFly.pending = 0;
-        ticketFly(n);
+        clearTimeout(tixFly.timer);
+        const go = () => { const n = tixFly.pending; tixFly.pending = 0; tixFly.last = Date.now(); if (n > 0) ticketFly(n); };
+        const wait = TIX_FLY_GAP_MS - (Date.now() - tixFly.last);
+        if (wait <= 0) go(); else tixFly.timer = setTimeout(go, wait);
     }
     let tixWatch = null;
     function watchTicketNumber() {
@@ -8570,7 +8571,6 @@
         if (value === null || !player) return;
         if (tixSeen !== null && value > tixSeen) tixFlyGain(value - tixSeen);
         tixSeen = value;
-        tixFlyGain(0);
         const now = Date.now();
         let d = null;
         try { d = JSON.parse(localStorage.getItem(TIX_KEY) || 'null'); } catch (e) { /* blocked */ }
@@ -11293,12 +11293,13 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.38.1', date: '2026-09-29', items: ['Flying tickets: every portion of tickets the game hands out gets its own flight, instead of being gathered for 30 seconds.'] },
         { v: '6.38.0', date: '2026-09-29', items: [
             'Click the Tickets card for your ticket history: earned and spent in the last hour, today and since you opened the page, why you are earning or not, and a way to the Leaderboards. Settings \u203a Header \u203a Ticket history on the Tickets card',
             'Flying tickets: when tickets come in, a few small tickets and the amount fly out of the Tickets card, gathered to at most once every 30 seconds. Settings \u203a Header \u203a Flying tickets',
