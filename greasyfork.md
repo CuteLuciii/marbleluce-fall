@@ -18,7 +18,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **Beverage bar** — the beverages as a compact bar, as symbols or with names.
 - **On the throne** — opt-in: when you take the crown, the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).
 - **Tomato notice** — a tomato thrown at you shows as one small line with the thrower's name instead of a picture, and an x dismisses it.
-- **Mentions** — chat messages with your name in them get a gold frame.
+- **Mentions** — chat messages with your name or one of your nicknames in them get a gold frame; @ + Tab completes a name, like on Twitch.
 - **Tomato button** — beside Send: tick one, several or all of the players you can throw at, and throw. Each throw is the game's own !tomato line, and the answers come back as one line you can dismiss.
 - **Enhanced chat** — hide system lines you don't need, text sizes, grouped messages, pop the chat out into a window, a compact cosmetics switch.
 - **Board fit** — the board sizes itself to your screen; see-through board frames.

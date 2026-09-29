@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.36.0
+// @version      6.37.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -324,7 +324,10 @@
             { key: 'chatTomatoBtn', label: 'Tomato button',
               hint: 'A tomato between the message box and Send. It lists the players you can throw at (the same list the game offers for !tomato): tick one, several or All, and throw. Each throw goes out as an ordinary !tomato line in the chat.' },
             { key: 'chatMentions', label: 'Highlight messages that mention you',
-              hint: 'A message with your name in it (with or without @) gets a gold frame, so it stands out while the chat runs on. Your own messages are left out.' },
+              hint: 'A message with your name in it (with or without @) gets a gold frame, so it stands out while the chat runs on. Your own messages are left out. Nicknames: other words that mean you, separated by commas.',
+              sub: { key: 'chatMentionNames', type: 'text', label: 'Nicknames', def: '', placeholder: 'e.g. lucie, luce', run: () => mentionRefresh() } },
+            { key: 'chatTabComplete', label: 'Complete names with @ and Tab',
+              hint: 'Type @ and the start of a name, then Tab: the name is filled in, Tab again for the next match (Shift+Tab goes back). The @ is left out of the message. Names come from the chat and from the players in the game.' },
             { key: 'chatStick', label: 'Stay at the newest message',
               hint: 'While you are at the bottom, the chat stays there — also after a reload and when names, fonts or pictures load late. Scroll up to read, and it stays where you are.' },
         ], extra: { title: 'Enhanced chat', items: [
@@ -376,6 +379,7 @@
             for (const sub of itemSubs(item)) {
                 if (sub.type === 'action') continue;   // a button, nothing to store
                 settingDefaults[sub.key] = sub.def;
+                if (sub.type === 'text') { settings[sub.key] = typeof stored[sub.key] === 'string' ? stored[sub.key].slice(0, 300) : sub.def; continue; }
                 const v = Number(stored[sub.key]);
                 settings[sub.key] = sub.type === 'range'
                     ? (Number.isFinite(v) ? Math.max(sub.min, Math.min(sub.max, v)) : sub.def)
@@ -1960,6 +1964,9 @@
         .mcfo-set__sub[data-off] { opacity: 0.35; pointer-events: none; }
         .mcfo-set__sublabel { font-size: 12px; font-weight: 700; color: #9ab0c0; white-space: nowrap; min-width: 82px; }
         .mcfo-set__range { flex: 1; min-width: 0; accent-color: #2f9e62; cursor: pointer; }
+        .mcfo-set__field { flex: 1; min-width: 0; box-sizing: border-box; padding: 6px 9px; border: 1px solid #355066; border-radius: 6px;
+                          background: #0b141c; color: #d7e2ea; font: inherit; font-size: 12px; }
+        .mcfo-set__field:focus { outline: none; border-color: #4d7ea6; }
         .mcfo-set__val { min-width: 42px; text-align: right; font-weight: 800; color: #ffd479; font-variant-numeric: tabular-nums; }
         .mcfo-set__reset {
             flex: none; border: 1px solid #2c4254; border-radius: 6px; background: transparent;
@@ -10307,22 +10314,93 @@
     // "DreamingLucie" matches "@dreaminglucie" and "hi DreamingLucie!", not "DreamingLucie2".
     // Only the row is marked; the text stays the game's own. Each row is checked once per name
     // (data-mcfo-mfor), so a long chat costs nothing on the next pass.
-    let mentionRe = null, mentionFor = '';
+    // Nicknames (6.37, Settings › Chat › Nicknames): more words that mean you, same rules.
+    let mentionRe = null, mentionFor = '', mentionMe = '';
+    function mentionWords(name) {
+        const nick = String(settings.chatMentionNames || '').split(/[,;\n]+/).map(x => x.trim().replace(/^@/, '')).filter(x => x.length >= 2);
+        return [...new Set([name, ...nick].filter(Boolean).map(x => x.toLowerCase()))];
+    }
     function mentionPass(list) {
         const name = settings.chatMentions ? (accountName() || '') : '';
-        if (name !== mentionFor) {
-            mentionFor = name;
-            mentionRe = name ? new RegExp('(^|[^A-Za-z0-9_])@?' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_])', 'i') : null;
+        const words = name ? mentionWords(name) : [];
+        const key = words.join('|');
+        if (key !== mentionFor) {
+            mentionFor = key;
+            mentionMe = name.toLowerCase();
+            const esc = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+            mentionRe = words.length ? new RegExp('(^|[^\\p{L}\\p{N}_])@?(?:' + words.map(esc).join('|') + ')(?![\\p{L}\\p{N}_])', 'iu') : null;
         }
         for (const msg of list.querySelectorAll('article.mcf-chat__message:not(.mcf-chat__private)')) {
             if (msg.getAttribute('data-mcfo-mfor') === mentionFor) continue;
             msg.setAttribute('data-mcfo-mfor', mentionFor);
             const sender = (msg.querySelector('.mcf-chat__sender')?.textContent || '').trim();
             const text = msg.querySelector('.mcf-chat__text')?.textContent || '';
-            const hit = !!mentionRe && sender.toLowerCase() !== mentionFor.toLowerCase() && mentionRe.test(text);
+            const hit = !!mentionRe && sender.toLowerCase() !== mentionMe && mentionRe.test(text);
             if (msg.hasAttribute('data-mcfo-mention') !== hit) msg.toggleAttribute('data-mcfo-mention', hit);
         }
     }
+
+    // A change to the nicknames checks every row again.
+    function mentionRefresh() {
+        mentionFor = '\u0000';
+        const list = document.querySelector(CHAT_LIST_SEL);
+        if (list) mentionPass(list);
+    }
+
+    // --- @ + Tab completes a name (6.37) ---
+    // Like Twitch, but only after an @, so a Tab meant for something else never turns a word
+    // into a name. "@dre" + Tab -> "DreamingLucie " (the @ goes, the message carries the plain
+    // name, the way people write it here). Tab again walks on through the matches, Shift+Tab back;
+    // any other key ends the round. Works in the game's field and in our growing box (9h).
+    // Names: who wrote in the chat, latest first, then the players the game offers for !tomato
+    // (loadTomatoTargets, 9j) — both without yourself.
+    const tabDone = { el: null, value: '', matches: [], i: 0, start: 0 };
+    function tabNames() {
+        const me = (accountName() || '').toLowerCase();
+        const seen = new Set(), out = [];
+        const add = n => { n = String(n || '').trim(); const k = n.toLowerCase(); if (n && k !== me && !seen.has(k)) { seen.add(k); out.push(n); } };
+        const list = document.querySelector(CHAT_LIST_SEL);
+        if (list) [...list.querySelectorAll('.mcf-chat__sender')].reverse().forEach(x => add(x.textContent));
+        tomatoPick.names.forEach(add);
+        return out;
+    }
+    function tabField(t) {
+        return t && t.closest && t.closest('.mcf-chat__form') && t.matches('[data-role="chat-input"], textarea.mcfo-chatgrow') ? t : null;
+    }
+    document.addEventListener('focusin', e => {
+        // The player list is fetched ahead, so the first Tab already has it.
+        if (settings.chatTabComplete && tabField(e.target)) loadTomatoTargets().catch(() => {});
+    }, true);
+    document.addEventListener('keydown', e => {
+        const el = tabField(e.target);
+        if (!el) return;
+        if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey || !settings.chatTabComplete) { if (e.key !== 'Shift') tabDone.el = null; return; }
+        const value = el.value, caret = el.selectionStart;
+        let round = tabDone.el === el && tabDone.value === value && tabDone.matches.length ? tabDone : null;
+        if (!round) {
+            const m = value.slice(0, caret).match(/(^|\s)@([^\s@]*)$/);
+            if (!m) return;   // no @ word: Tab does what it always does
+            const prefix = m[2].toLowerCase();
+            const matches = tabNames().filter(n => n.toLowerCase().startsWith(prefix));
+            if (!matches.length) return;
+            round = { el, matches, i: -1, start: caret - m[2].length - 1, end: caret };
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const n = round.matches.length;
+        round.i = round === tabDone ? (round.i + (e.shiftKey ? n - 1 : 1)) % n : (e.shiftKey ? n - 1 : 0);
+        const end = round === tabDone ? round.start + round.inserted.length : round.end;
+        const name = round.matches[round.i] + (/^\s/.test(value.slice(end)) ? '' : ' ');
+        el.value = value.slice(0, round.start) + name + value.slice(end);
+        const at = round.start + name.length;
+        el.setSelectionRange(at, at);
+        Object.assign(tabDone, round, { el, value: el.value, inserted: name });
+        // The game's field listens for input (its suggestion list), our box syncs on it.
+        try { el.dispatchEvent(new pageWindow.Event('input', { bubbles: true })); }
+        catch (err) { try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e2) {} }
+        // Our box may have rewritten the value on that input (it flattens line breaks): keep up.
+        tabDone.value = el.value;
+    }, true);
 
     function chatPassSoon() {
         const list = chatRoot() && chatRoot().querySelector('[data-role="chat-messages"]');
@@ -10987,12 +11065,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.36.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.37.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.37.0', date: '2026-09-29', items: [
+            'Mentions with nicknames: add the other words people call you (e.g. short forms of your name), separated by commas, and messages with them get the gold frame too. Settings \u203a Chat \u203a Highlight messages that mention you',
+            'Type @ and the start of a name, then Tab: the name is filled in without the @, Tab again for the next match, Shift+Tab goes back. Names come from the chat and from the players in the game. Settings \u203a Chat \u203a Complete names with @ and Tab',
+        ] },
         { v: '6.36.0', date: '2026-09-29', items: [
             'The tileset card reads "Current: Base Set" and below it "Next:" with the next tileset and when it starts, in your own time. The game\'s Active / Inactive line moved over to the Tickets card. Settings \u203a Header \u203a Next tileset on the tileset card',
             'Chat messages with your name in them (with or without @) get a gold frame. Settings \u203a Chat \u203a Highlight messages that mention you',
@@ -12436,6 +12518,24 @@
             });
             show();
             row.append(range, val, reset);
+        } else if (sub.type === 'text') {
+            // Free text (6.37). Saved while typing, a moment after the last key.
+            const field = document.createElement('input');
+            field.type = 'text';
+            field.className = 'mcfo-set__field';
+            field.maxLength = 300;
+            field.spellcheck = false;
+            field.placeholder = sub.placeholder || '';
+            field.value = settings[sub.key] || '';
+            let timer = 0;
+            field.addEventListener('input', () => {
+                settings[sub.key] = field.value;
+                clearTimeout(timer);
+                timer = setTimeout(() => { saveSettings(); if (sub.run) sub.run(); }, 350);
+            });
+            // Keys typed here are for the field, not for the game's shortcuts underneath.
+            field.addEventListener('keydown', e => { if (e.key !== 'Escape') e.stopPropagation(); });
+            row.appendChild(field);
         } else if (sub.type === 'action') {
             const b = document.createElement('button');
             b.type = 'button';
