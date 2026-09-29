@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.37.1
+// @version      6.38.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -242,6 +242,10 @@
               hint: 'Gold opens the Shop, Diamonds the packages, the tileset card the schedule.' },
             { key: 'pointsLoadouts', label: 'Loadouts on the Current Points card',
               hint: 'Click the Current Points card for your saved loadouts and put one on straight away. They are made in Inventory › Loadouts.' },
+            { key: 'ticketHistory', label: 'Ticket history on the Tickets card',
+              hint: 'Click the Tickets card: tickets earned and spent in the last hour, today and since you opened the page, and why you are earning or not. Counted in this browser while the game is open in a tab.' },
+            { key: 'ticketFly', label: 'Flying tickets',
+              hint: 'When tickets come in, a few small tickets and the amount fly out of the Tickets card — gathered, at most every 30 seconds, since tickets come in a few at a time. Left out at the Maximum performance level and when your system asks for less motion.' },
             { key: 'sessionNext', label: 'Next tileset on the tileset card',
               hint: 'The tileset card reads "Current: ..." and below it "Next: ..." with the start time. The game\'s Active / Inactive line moves over to the Tickets card.' },
             { key: 'eventsPanel', label: 'Upcoming tilesets',
@@ -1457,6 +1461,35 @@
         .mcfo-tstatus b { font-weight: 800; color: #d8e8f6; }
         .mcfo-tstatus[data-mcfo-state="active"] b { color: #7ee2a0; }
         .mcfo-tstatus[data-mcfo-state="inactive"] b { color: #f3b27a; }
+
+        /* === TICKET HISTORY (6.38, section 8c) === */
+        .mcfo-menu--tix { width: 300px; padding: 10px 12px 12px; }
+        /* Flying tickets (6.38): a point on the number, the pieces animated from there (downwards —
+           the card sits at the top of the page). */
+        .mcfo-tixfly { position: fixed; z-index: 10036; width: 0; height: 0; pointer-events: none; }
+        .mcfo-tixfly__t { position: absolute; left: 0; top: 0; width: 22px; height: 15px; opacity: 0;
+                          filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5)); }
+        .mcfo-tixfly__t svg { display: block; width: 100%; height: 100%; }
+        .mcfo-tixfly__plus { position: absolute; left: 0; top: 0; opacity: 0; white-space: nowrap;
+                             font: 800 14px/1 system-ui, sans-serif; color: #ffd479; text-shadow: 0 1px 0 #3a2a00, 0 0 8px rgba(0, 0, 0, 0.6); }
+        .mcfo-tix__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+                          padding-bottom: 7px; border-bottom: 1px solid #243443; margin-bottom: 8px; }
+        .mcfo-tix__title { font-weight: 800; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: #9ab0c0; }
+        .mcfo-tix__now { font-weight: 800; font-size: 16px; color: #d8e8f6; font-variant-numeric: tabular-nums; }
+        .mcfo-tix__status { font-size: 12px; line-height: 1.35; margin-bottom: 9px; color: #a9bac8; }
+        .mcfo-tix__status b { color: #d8e8f6; }
+        .mcfo-tix__status[data-mcfo-state="active"] b { color: #7ee2a0; }
+        .mcfo-tix__status[data-mcfo-state="inactive"] b { color: #f3b27a; }
+        .mcfo-tix__grid { display: grid; grid-template-columns: auto 1fr 1fr; gap: 5px 12px; align-items: baseline;
+                          font-size: 12px; font-variant-numeric: tabular-nums; }
+        .mcfo-tix__grid > .mcfo-tix__h { font-size: 10px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #6f8699; text-align: right; }
+        .mcfo-tix__grid > .mcfo-tix__h:first-child { text-align: left; }
+        .mcfo-tix__label { color: #9ab0c0; white-space: nowrap; }
+        .mcfo-tix__label small { display: block; font-size: 10px; color: #6f8699; }
+        .mcfo-tix__earn { text-align: right; color: #7ee2a0; font-weight: 700; }
+        .mcfo-tix__spend { text-align: right; color: #f3a4a4; font-weight: 700; }
+        .mcfo-tix__note { margin-top: 9px; font-size: 10.5px; line-height: 1.35; color: #6f8699; }
+        .mcfo-menu button.mcfo-tix__go { margin-top: 8px; text-align: center; font-weight: 700; border: 1px solid #355066; }
 
         /* === FOOTER: SEASON, EPISODE, BUILD ===
            Season and episode used to sit inside the tileset card, where they filled the upper
@@ -8221,6 +8254,15 @@
     // the overlay.
     const CARDS = [
         {
+            // 6.38: the ticket history (8c). No sign of its own: the right-hand side of the card
+            // holds the game's Active line (8b), and the glow says it can be clicked.
+            id: 'tickets',
+            find: () => document.querySelector('[data-role="metric-cell"][data-metric-role="tickets"]'),
+            label: null,
+            setting: 'ticketHistory',
+            run: el => showTicketHistory(el),
+        },
+        {
             id: 'gold',
             find: () => document.querySelector('[data-role="metric-cell"][data-metric-role="gold"]'),
             label: 'Shop',
@@ -8418,6 +8460,195 @@
             sub.textContent = m[2].trim();
             status.appendChild(sub);
         }
+    }
+
+    // =========================================================================================
+    // 8c. TICKET HISTORY ON THE TICKETS CARD (6.38)
+    // =========================================================================================
+    // The game shows the ticket balance and nothing about how it got there. Read on every beat
+    // from the card itself (the game writes the whole number, grouped for the locale:
+    // formatIntegerForDisplay), each rise counts as earned, each fall as spent. Kept in
+    // localStorage, so a reload or a second tab carries on the same count:
+    //   mcfo_tix = { player, last, earned, spent, since, samples: [[t, earned, spent], ...] }
+    // "earned"/"spent" are running totals; a sample every five minutes, 48 hours of them. Any
+    // window is then the difference between now and the sample at its start. Both tabs update
+    // the same "last" value, so a change is counted once, by whichever tab sees it first.
+    // What happened while no tab was open lands on the moment a tab comes back: the change is
+    // right, only its time is not. The popup says since when it has been counting.
+    const TIX_KEY = 'mcfo_tix';
+    const TIX_SAMPLE_MS = 5 * 60 * 1000, TIX_KEEP_MS = 48 * 3600 * 1000;
+    const tixOpen = { earned: null, spent: null, at: Date.now() };   // this page, since it was opened
+    let tixSeen = null;   // the last value THIS tab saw, for the flying tickets (another tab may count first)
+
+    // --- Flying tickets (6.38) ---
+    // When the balance has risen (gathered, see tixFlyGain): 2 to 7 small tickets (more for more tickets, on a log scale)
+    // and "+N" rise from the number on the card and fade out within a second. Only in a visible
+    // tab, never at the Maximum performance level or with reduced motion asked for, and never for
+    // the first reading of a page (that is catching up, not earning). A watcher on the number
+    // shows it the moment the game writes it, not on the next beat.
+    const TIX_SVG = '<svg viewBox="0 0 24 16" aria-hidden="true"><path d="M2 2h20v4a2 2 0 0 0 0 4v4H2v-4a2 2 0 0 0 0-4Z" fill="#f2c14e" stroke="#5a3d06" stroke-width="1.2" stroke-linejoin="round"/><path d="M15 3v10" stroke="#5a3d06" stroke-width="1" stroke-dasharray="1.5 1.5"/></svg>';
+    function ticketFly(gain) {
+        if (!settings.ticketFly || document.hidden || settings.perfLevel === 'maximum') return;
+        try { if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+        const num = document.querySelector('[data-role="metric-cell"][data-metric-role="tickets"] [data-role="tickets"]');
+        const r = num && num.getBoundingClientRect();
+        if (!r || !r.width) return;
+        const layer = document.createElement('div');
+        layer.className = 'mcfo-tixfly';
+        layer.style.left = Math.round(r.left + r.width / 2) + 'px';
+        layer.style.top = Math.round(r.top + r.height / 2) + 'px';
+        const n = Math.max(2, Math.min(7, Math.round(1 + Math.log10(Math.max(1, gain)) * 1.5)));
+        for (let i = 0; i < n; i++) {
+            const t = document.createElement('span');
+            t.className = 'mcfo-tixfly__t';
+            t.innerHTML = TIX_SVG;
+            layer.appendChild(t);
+            const dx = (Math.random() - 0.5) * 90, dy = 40 + Math.random() * 45, rot = (Math.random() - 0.5) * 70;
+            t.animate([
+                { transform: 'translate(-50%, -50%) scale(0.6) rotate(0deg)', opacity: 0 },
+                { transform: `translate(calc(-50% + ${dx * 0.35}px), calc(-50% + ${dy * 0.35}px)) scale(1) rotate(${rot * 0.4}deg)`, opacity: 1, offset: 0.25 },
+                { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.85) rotate(${rot}deg)`, opacity: 0 },
+            ], { duration: 850 + Math.random() * 300, delay: i * 45, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'both' });
+        }
+        const plus = document.createElement('span');
+        plus.className = 'mcfo-tixfly__plus';
+        plus.textContent = '+' + Number(gain).toLocaleString();
+        layer.appendChild(plus);
+        plus.animate([
+            { transform: 'translate(-50%, -50%)', opacity: 0 },
+            { transform: 'translate(-50%, calc(-50% + 14px))', opacity: 1, offset: 0.2 },
+            { transform: 'translate(-50%, calc(-50% + 46px))', opacity: 0 },
+        ], { duration: 1300, easing: 'ease-out', fill: 'both' });
+        document.body.appendChild(layer);
+        setTimeout(() => layer.remove(), 1700);
+    }
+    // Tickets come in with time, about nine a minute, a few at a time: one burst for every
+    // update would never stop. The gains are gathered and fly together, at most every 30 s.
+    const TIX_FLY_GAP_MS = 30 * 1000;
+    const tixFly = { pending: 0, last: 0 };
+    function tixFlyGain(gain) {
+        tixFly.pending += gain;
+        if (!tixFly.pending || Date.now() - tixFly.last < TIX_FLY_GAP_MS) return;
+        tixFly.last = Date.now();
+        const n = tixFly.pending;
+        tixFly.pending = 0;
+        ticketFly(n);
+    }
+    let tixWatch = null;
+    function watchTicketNumber() {
+        const num = document.querySelector('[data-role="metric-cell"][data-metric-role="tickets"] [data-role="tickets"]');
+        if (!num || (tixWatch && tixWatch.target === num)) return;
+        if (tixWatch) tixWatch.disconnect();
+        tixWatch = new MutationObserver(() => tixTick());
+        tixWatch.observe(num, { childList: true, characterData: true, subtree: true });
+        tixWatch.target = num;
+    }
+
+    function tixRead() {
+        const el = document.querySelector('[data-role="metric-cell"][data-metric-role="tickets"] [data-role="tickets"]');
+        const text = (el && el.textContent || '').trim();
+        if (!/^\d[\d\s.,'\u00a0\u202f]*$/.test(text)) return null;   // "…", "UNAVAILABLE", "—"
+        const n = Number(text.replace(/\D/g, ''));
+        return Number.isFinite(n) ? n : null;
+    }
+    // Two keys: the running totals, read and written on every change (small), and the samples,
+    // written once every five minutes (up to 576 of them).
+    const TIX_SAMPLES = 'mcfo_tix_s';
+    function tixLoad() {
+        try {
+            const d = JSON.parse(localStorage.getItem(TIX_KEY) || 'null');
+            if (!d || typeof d !== 'object') return null;
+            const smp = JSON.parse(localStorage.getItem(TIX_SAMPLES) || '[]');
+            d.samples = Array.isArray(smp) && smp.length ? smp : [[d.since, 0, 0]];
+            return d;
+        } catch (e) { return null; }
+    }
+    function tixTick() {
+        if (!settings.ticketHistory || signedOut()) return;
+        const value = tixRead();
+        const player = loPlayerNow() || accountName();
+        if (value === null || !player) return;
+        if (tixSeen !== null && value > tixSeen) tixFlyGain(value - tixSeen);
+        tixSeen = value;
+        tixFlyGain(0);
+        const now = Date.now();
+        let d = null;
+        try { d = JSON.parse(localStorage.getItem(TIX_KEY) || 'null'); } catch (e) { /* blocked */ }
+        const fresh = !d || d.player !== player || !Number.isFinite(d.last);
+        // Another account in this browser starts its own count.
+        if (fresh) d = { player, last: value, earned: 0, spent: 0, since: now, sampledAt: 0 };
+        const diff = value - d.last;
+        if (diff > 0) d.earned += diff; else d.spent -= diff;
+        d.last = value;
+        // "This page" starts after the first reading: what changed while no tab was open is not
+        // this page's.
+        if (tixOpen.earned === null) { tixOpen.earned = d.earned; tixOpen.spent = d.spent; }
+        const sample = fresh || now - (d.sampledAt || 0) >= TIX_SAMPLE_MS;
+        if (!diff && !sample) return;   // nothing to write
+        try {
+            if (sample) {
+                let smp = [];
+                try { smp = fresh ? [] : JSON.parse(localStorage.getItem(TIX_SAMPLES) || '[]'); } catch (e) { smp = []; }
+                smp.push([now, d.earned, d.spent]);
+                while (smp.length > 2 && now - smp[1][0] > TIX_KEEP_MS) smp.shift();
+                d.since = smp[0][0];
+                d.sampledAt = now;
+                localStorage.setItem(TIX_SAMPLES, JSON.stringify(smp));
+            }
+            localStorage.setItem(TIX_KEY, JSON.stringify(d));
+        } catch (e) { /* full or blocked */ }
+    }
+    // Earned and spent since the given moment, and from when that really counts (the tracking
+    // may be younger than the window).
+    function tixWindow(d, from) {
+        let base = d.samples[0];
+        for (const x of d.samples) { if (x[0] <= from) base = x; else break; }
+        return { earned: d.earned - base[1], spent: d.spent - base[2], from: Math.max(from, base[0]) };
+    }
+
+    function showTicketHistory(anchor) {
+        tixTick();
+        const menu = showPanel(anchor, 'mcfo-menu--tix', m => {
+            const d = tixLoad();
+            const value = tixRead();
+            const socket = role('socket');
+            const text = (socket && socket.textContent || '').trim();
+            const why = (socket && socket.getAttribute('title')) || '';
+            const sm = text.match(/^([^:]+):\s*(.+)$/);
+            const state = sm ? sm[1].trim().toLowerCase() : '';
+            const fmt = n => Number(n).toLocaleString();
+            const clock = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            let html = `<div class="mcfo-tix__head"><span class="mcfo-tix__title">Tickets</span><span class="mcfo-tix__now">${value === null ? '\u2014' : fmt(value)}</span></div>`;
+            if (text) html += `<div class="mcfo-tix__status" data-mcfo-state="${state === 'active' ? 'active' : state === 'inactive' ? 'inactive' : ''}">`
+                + (sm ? `<b>${escapeHtml(sm[1].trim())}:</b> ${escapeHtml(sm[2].trim())}` : `<b>${escapeHtml(text)}</b>`)
+                + (why ? '<br>' + escapeHtml(why) : '') + '</div>';
+            if (d && d.player === (loPlayerNow() || accountName())) {
+                const now = Date.now(), midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+                const rows = [
+                    ['Last hour', tixWindow(d, now - 3600 * 1000), now - 3600 * 1000],
+                    ['Today', tixWindow(d, midnight.getTime()), midnight.getTime()],
+                    ['This page', { earned: d.earned - (tixOpen.earned ?? d.earned), spent: d.spent - (tixOpen.spent ?? d.spent), from: tixOpen.at }, tixOpen.at],
+                ];
+                html += '<div class="mcfo-tix__grid"><span class="mcfo-tix__h"></span><span class="mcfo-tix__h">Earned</span><span class="mcfo-tix__h">Spent</span>';
+                for (const [label, w, want] of rows) {
+                    const late = w.from > want + 60 * 1000 ? `<small>since ${clock(w.from)}</small>` : label === 'This page' ? `<small>since ${clock(w.from)}</small>` : '';
+                    html += `<span class="mcfo-tix__label">${label}${late}</span><span class="mcfo-tix__earn">+${fmt(w.earned)}</span><span class="mcfo-tix__spend">\u2212${fmt(w.spent)}</span>`;
+                }
+                html += '</div>';
+                html += `<div class="mcfo-tix__note">Counted in this browser since ${new Date(d.since).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}, while the game is open in a tab. Changes while no tab was open count at the moment a tab comes back.</div>`;
+            } else {
+                html += '<div class="mcfo-tix__note">Counting starts now: earned and spent tickets show up here as they come.</div>';
+            }
+            html += '<button type="button" class="mcfo-tix__go">Leaderboards \u203a</button>';
+            m.innerHTML = html;
+            m.querySelector('.mcfo-tix__go').addEventListener('click', ev => {
+                ev.stopPropagation();
+                closeMenus();
+                const page = PAGES['leaderboards-nav'];
+                if (page) openPage(page.path, page.title);
+            });
+        });
+        if (menu) placePanel(anchor, menu);
     }
 
     // =========================================================================================
@@ -11062,12 +11293,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.37.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.38.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.38.0', date: '2026-09-29', items: [
+            'Click the Tickets card for your ticket history: earned and spent in the last hour, today and since you opened the page, why you are earning or not, and a way to the Leaderboards. Settings \u203a Header \u203a Ticket history on the Tickets card',
+            'Flying tickets: when tickets come in, a few small tickets and the amount fly out of the Tickets card, gathered to at most once every 30 seconds. Settings \u203a Header \u203a Flying tickets',
+        ] },
         { v: '6.37.1', date: '2026-09-29', items: [
             'The loadouts menu on the Current Points card opens on the first click. It used to wait for the inventory first, so the first click seemed to do nothing, and a second click in that time closed it again.',
             'The frame rate counter moved into the chat header; the Tickets card keeps only the Active line, right-aligned.',
@@ -15078,6 +15313,8 @@
         bindMenu(firstRole('session-cell', 'tileset-indicator'), 'events', showEvents);
         buildCards();
         buildSessionLines();
+        tixTick();
+        watchTicketNumber();
         buildFooterMeta();
         showUpdate();
         showDailyDot();

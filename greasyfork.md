@@ -13,6 +13,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **Bidding** — unbid in one click, extra ticket chips, autobid with risk protection and an allow- and blocklist for tiles (new tiles get no bid until you allow them).
 - **King tile** — the game's reign read-outs to your liking (pick the lines, text size, visibility), plus the toll the King has set; attack when free (opt-in), also again and again until you are King.
 - **Rebellion and Royal Celebration** — Rebellion beside the ticket chips with a panel of all tiers and a confirm click; while you are King it turns into Royal Celebration beside the toll, only for the King.
+- **Ticket history** — click the Tickets card for tickets earned and spent in the last hour, today and this session; small flying tickets when tickets come in.
 - **Next tileset** — the tileset card shows the current tileset and the next one with its start time; the Active line sits in the Tickets card.
 - **Tileset name** — a new tileset is announced by its name over the board instead of a full-screen picture that blacks the game out.
 - **Beverage bar** — the beverages as a compact bar, as symbols or with names.
