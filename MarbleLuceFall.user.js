@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.39
+// @version      6.39.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1631,6 +1631,12 @@
         .mcfo-menu button.mcfo-ani__row--live:hover { background: #1d3622; }
         .mcfo-ani__live { grid-column: 2 / -1; margin-top: -4px; font-size: 11px; color: #9fdc92; white-space: nowrap; }
         .mcfo-menu button.mcfo-ani__row--live .mcfo-ani__call { color: #cfeec8; font-weight: 800; }
+        /* You are in already (6.39.1): red, like a switch that is taken. */
+        .mcfo-animal-btn[data-mcfo-joined]::after { background: #e0483a; }
+        .mcfo-menu button.mcfo-ani__row--joined { border-color: #a8433a; background: #2a1715; }
+        .mcfo-menu button.mcfo-ani__row--joined:hover { background: #351c19; }
+        .mcfo-menu button.mcfo-ani__row--joined .mcfo-ani__live { color: #f3a4a4; }
+        .mcfo-menu button.mcfo-ani__row--joined .mcfo-ani__call { color: #ffc9c2; }
         .mcfo-ani__foot { margin-top: 8px; font-size: 11px; line-height: 1.35; color: #8da2b7; }
         .mcfo-menu--tomato { width: 250px; padding: 10px 12px 12px; }
         .mcfo-tom__head { font-weight: 800; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: #ff9a8a;
@@ -11006,7 +11012,8 @@
             const shown = chatRowTime(msg);
             // Within the current minute: it just came in, now is better than the minute.
             const at = shown === null || Math.abs(Date.now() - shown) < 60 * 1000 ? Date.now() : shown;
-            rec = { animal: hit.animal, n: hit.n, at };
+            const who = (msg.querySelector('.mcf-chat__sender')?.textContent || '').trim().toLowerCase();
+            rec = { animal: hit.animal, n: hit.n, at, who };
         }
         animalRows.set(msg, rec);
         return rec;
@@ -11014,7 +11021,7 @@
 
     // The gathering running now, as far as the chat shows it: the latest animal line, the lines
     // of the same animal before it that are less than 10 minutes apart, and the end 10 minutes
-    // after the last of them.
+    // after the last of them. mine: one of those lines is yours, so you are in already (6.39.1).
     function animalGathering() {
         const list = document.querySelector(CHAT_LIST_SEL);
         if (!list) return null;
@@ -11024,15 +11031,17 @@
         const last = recs[recs.length - 1];
         const ends = last.at + ANIMAL_GATHER_MS;
         if (Date.now() >= ends) return null;
-        let joined = last.n, prev = last.at;
+        const me = (accountName() || '').toLowerCase();
+        let joined = last.n, prev = last.at, mine = !!me && last.who === me;
         for (let i = recs.length - 2; i >= 0; i--) {
             const r = recs[i];
             if (r.animal !== last.animal) continue;
             if (prev - r.at > ANIMAL_GATHER_MS) break;
             joined = Math.max(joined, r.n);
+            if (me && r.who === me) mine = true;
             prev = r.at;
         }
-        return { animal: last.animal, joined, ends };
+        return { animal: last.animal, joined, ends, mine };
     }
     function animalLiveText(g) {
         const min = Math.max(1, Math.round((g.ends - Date.now()) / 60000));
@@ -11060,7 +11069,8 @@
         if (btn.nextElementSibling !== next) form.insertBefore(btn, next);   // type="button": never submits
         const g = animalGathering();
         btn.toggleAttribute('data-mcfo-live', !!g);
-        btn.title = g ? `Animal calls - ${g.animal.label} gathering: ${animalLiveText(g)}` : 'Animal calls';
+        btn.toggleAttribute('data-mcfo-joined', !!(g && g.mine));
+        btn.title = g ? `Animal calls - ${g.animal.label} gathering: ${animalLiveText(g)}${g.mine ? ', you are in' : ''}` : 'Animal calls';
     }
 
     function showAnimalPanel(anchor) {
@@ -11074,15 +11084,15 @@
                 const live = !!g && a === g.animal;
                 const b = document.createElement('button');
                 b.type = 'button';
-                b.className = 'mcfo-ani__row' + (live ? ' mcfo-ani__row--live' : '');
+                b.className = 'mcfo-ani__row' + (live ? ' mcfo-ani__row--live' : '') + (live && g.mine ? ' mcfo-ani__row--joined' : '');
                 b.innerHTML = '<span class="mcfo-ani__emoji"></span><span class="mcfo-ani__name"></span><span class="mcfo-ani__call"></span>';
                 b.querySelector('.mcfo-ani__emoji').textContent = a.emojis[0];
                 b.querySelector('.mcfo-ani__name').textContent = a.label;
-                b.querySelector('.mcfo-ani__call').textContent = live ? 'Join !' + a.call : '!' + a.call;
+                b.querySelector('.mcfo-ani__call').textContent = !live ? '!' + a.call : g.mine ? 'Joined \u2713' : 'Join !' + a.call;
                 if (live) {
                     const sub = document.createElement('span');
                     sub.className = 'mcfo-ani__live';
-                    sub.textContent = 'Gathering: ' + animalLiveText(g);
+                    sub.textContent = (g.mine ? 'You are in: ' : 'Gathering: ') + animalLiveText(g);
                     b.appendChild(sub);   // a row of its own, across name and call
                 }
                 b.title = 'Send !' + a.call;
@@ -11520,12 +11530,15 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.39';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.39.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.39.1', date: '2026-09-29', items: [
+            'Animal call button: once you have joined the running gathering, its entry turns red and says "Joined", and the dot on the paw turns red as well.',
+        ] },
         { v: '6.39', date: '2026-09-29', items: [
             'Animal call button: a paw next to the tomato lists all 17 animal calls (!howl, !honk, !croak, ...); one click sends the call. While a gathering runs in the chat, its animal stands on top with how many have joined and about how long it goes on, and the paw gets a green dot. Switch: Settings \u203a Chat \u203a Animal call button.',
         ] },
