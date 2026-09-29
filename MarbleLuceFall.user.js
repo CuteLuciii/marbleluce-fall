@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.40
+// @version      6.41
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -2983,7 +2983,7 @@
         themeWalk(doc);
         let el = style;
         if (!el) { el = doc.createElement('style'); el.id = 'mcfo-theme-rules'; doc.head.appendChild(el); }
-        el.textContent = (tokens === undefined || themeRulesStale ? tokenRulesText() : tokens) + mirrorSheets(doc) + frameDecorCss(theme) + skinFrameCss(theme);
+        el.textContent = (tokens === undefined || themeRulesStale ? tokenRulesText() : tokens) + mirrorSheets(doc) + frameDecorCss(theme) + skinFrameCss(theme) + unlockInfoCss(theme);
         if (doc.body.hasAttribute('data-mcfo-theme-watch')) return;
         doc.body.setAttribute('data-mcfo-theme-watch', '1');
         let queued = false;
@@ -3043,6 +3043,32 @@
             `${S} .mcfo-tsbanner__kicker { color: ${c(0.9, 0.06)}; }`,
             `${S} [data-role].mcfo-card.mcfo-card:hover { border-color: ${edge} !important; box-shadow: 0 0 0 1px ${edge}, 0 0 14px 2px ${c(0.6, 0.15).replace('rgb(', 'rgba(').replace(')', ', 0.55)')} !important; }`,
         ].join('\n');
+    }
+
+    // The inventory's unlock info (game v0.10.1g, 6.41): a round "i" next to every title and toll,
+    // and a popover that says how it was unlocked. The game draws both in fixed blues, which the
+    // colour mirror only shifts - on most themes it stayed a foreign blue ring. Drawn here from the
+    // page's own colour variables (--line, --ink, --panel-2, themed by the mirror like every
+    // card edge on the page), with the theme's accent only on hover. Doubled classes: these must
+    // beat the mirrored copy of the game's rule, which sits in the same style element.
+    function unlockInfoCss(t) {
+        if (!t || !t.accent) return '';
+        const k = Math.min(1.4, Math.max(0.25, t.accent.k));
+        const c = (L, C, a) => `rgba(${fromOklch(L, C * k, t.accent.h).join(', ')}, ${a === undefined ? 1 : a})`;
+        const S = 'html[data-mcfo-theme]';
+        const B = `${S} .inventoryUnlockInfoButton.inventoryUnlockInfoButton`;
+        const P = `${S} .inventoryUnlockPopover.inventoryUnlockPopover`;
+        return `
+${B} { width: 20px; height: 20px; margin-top: 1px; border: 1px solid var(--line, #2f3f4e); background: transparent;
+  color: var(--ink, #e3edf7); opacity: 0.75; font: italic 700 12px/1 Georgia, 'Times New Roman', serif; box-shadow: none;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s; }
+${B}:hover, ${B}[aria-expanded="true"] { opacity: 1; background: ${c(0.6, 0.13, 0.16)}; border-color: ${c(0.72, 0.13)}; color: ${c(0.9, 0.08)}; }
+${B}:focus-visible { outline: 2px solid ${c(0.72, 0.13)}; outline-offset: 2px; }
+${P} { border: 1px solid var(--line, #2f3f4e); border-radius: 10px; padding: 10px 14px;
+  background: var(--panel-2, #151d27); color: var(--ink, #e3edf7); font-size: 13px; line-height: 1.45;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), inset 0 1px 0 ${c(0.8, 0.1, 0.12)}; backdrop-filter: blur(6px); }
+${P} .inventoryUnlockClose { color: inherit; opacity: 0.6; background: transparent; }
+${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     }
 
     // ---- random theme ----
@@ -6748,6 +6774,40 @@
         raise(w);
         saveWinState(path, { min: false });
         drawTaskbar();
+        if (w.frame) frameFreshCheck(w);   // parked through a game update? (6.41)
+    }
+
+    // Stale pages (6.41). The game sends its pages without a Cache-Control header, so the browser
+    // may keep using an old copy for a while after an update - and that copy loads the OLD build's
+    // scripts. A window parked before an update keeps its page as well. (29.09.2026: the inventory's
+    // new unlock info stayed missing until Ctrl+Shift+R.) Every page names its build in
+    // /immutable-assets/<build>/; when a window shows another build than a fresh copy of "/", the
+    // window reloads. Once per build and window, so a check that cannot fix it never loops.
+    const assetBuildOf = text => { const m = /\/immutable-assets\/([^/"'?#\s]+)\//.exec(text || ''); return m ? m[1] : ''; };
+    const liveBuild = { at: 0, p: null };
+    function latestAssetBuild() {
+        if (liveBuild.p && Date.now() - liveBuild.at < 60000) return liveBuild.p;
+        liveBuild.at = Date.now();
+        liveBuild.p = fetch('/', { cache: 'no-store', credentials: 'same-origin' })
+            .then(r => (r.ok ? r.text() : '')).then(assetBuildOf).catch(() => '');
+        return liveBuild.p;
+    }
+    async function frameFreshCheck(w) {
+        const f = w && w.frame;
+        let doc, url;
+        try { doc = f && f.contentDocument; url = doc && f.contentWindow.location.href; } catch (e) { return; }
+        if (!doc || !doc.documentElement) return;
+        const have = assetBuildOf([...doc.querySelectorAll('script[src], link[href]')]
+            .map(el => el.getAttribute('src') || el.getAttribute('href')).join(' '));
+        if (!have) return;
+        const now = await latestAssetBuild();
+        if (!now || now === have || w.freshFor === now || f.contentDocument !== doc) return;
+        w.freshFor = now;
+        console.info('[MarbleLuceFall] window page from build ' + have + ', game is on ' + now + ': reloading');
+        // Refresh the cached copy first; the reload itself revalidates as well.
+        try { await fetch(url, { cache: 'reload', credentials: 'same-origin' }); } catch (e) {}
+        f.removeAttribute('data-mcfo-ready');
+        try { f.contentWindow.location.reload(); } catch (e) { f.src = url; }
     }
 
     function closeWindow(path) {
@@ -6903,6 +6963,7 @@
             } finally {
                 frame.setAttribute('data-mcfo-ready', '1');
             }
+            frameFreshCheck(w);   // an old copy from the browser cache? (6.41)
         });
         w.body.appendChild(frame);
         w.frame = frame;
@@ -11612,12 +11673,17 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.40';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.41';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.41', date: '2026-09-29', items: [
+            'Inventory: the new unlock info (the round i next to royal titles and default tolls) and its popup now wear your theme - ring in the colour of the card edges, popup in the theme\'s panel colour, accent on hover.',
+            'Windows reload their page by themselves when the game was updated in the meantime. Until now a window could keep showing the page from before the update (the unlock info only appeared after Ctrl+Shift+R).',
+            'Your Royal Titles (N): the count tooltip names the titles every player has again (the game moved that text into the unlock info).',
+        ] },
         { v: '6.40', date: '2026-09-29', items: [
             'Animal call button: the popup now says when the next gathering can start (after one ends there is a pause of at least 10 minutes), and animals still resting from their own gathering (an hour) are greyed out with the minutes left. The times come from the gatherings your tab has seen in the chat and are kept across reloads.',
         ] },
@@ -15046,7 +15112,11 @@
         const h = grid && grid.parentElement && grid.parentElement.querySelector(':scope > h2');
         if (!h) return;
         const cards = [...grid.querySelectorAll(':scope > article.inventoryCard')];
-        const base = cards.filter(c => /included for every player/i.test(c.textContent)).length;
+        // Since game v0.10.1g the card no longer says it; the unlock info button carries the text.
+        const base = cards.filter(c => {
+            const info = c.querySelector('[data-unlock-copy]');
+            return /included for every player/i.test(info ? info.getAttribute('data-unlock-copy') : c.textContent);
+        }).length;
         let tag = h.querySelector('.mcfo-titlecount');
         if (!tag) { tag = doc.createElement('span'); tag.className = 'mcfo-titlecount'; h.appendChild(tag); }
         const text = ` (${cards.length})`;

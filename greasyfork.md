@@ -9,7 +9,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
   - **Film & TV:** Supernatural, Breaking Bad, Back to the Future (with live time circuits), Everything Everywhere All at Once (googly eyes that follow your pointer), Star Wars (opening crawl, lightsaber buttons), Vertigo, Cinema
   - **Books:** The Lost Bookshop (Der verschwundene Buchladen), Reading Nook
   - **Music:** Die Ärzte, Linkin Park, Kraftklub, Goethes Erben, Samsas Traum, Prinz Pi
-- **Pages as windows** — shop, inventory, profile, credits and more open as movable windows over the game, with a taskbar.
+- **Pages as windows** — shop, inventory, profile, credits and more open as movable windows over the game, with a taskbar; after a game update they reload by themselves.
 - **Bidding** — unbid in one click, extra ticket chips, autobid with risk protection and an allow- and blocklist for tiles (new tiles get no bid until you allow them).
 - **King tile** — the game's reign read-outs to your liking (pick the lines, text size, visibility), plus the toll the King has set; attack when free (opt-in), also again and again until you are King.
 - **Rebellion and Royal Celebration** — Rebellion beside the ticket chips with a panel of all tiers and a confirm click; while you are King it turns into Royal Celebration beside the toll, only for the King.
