@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.35.2
+// @version      6.36.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -242,6 +242,8 @@
               hint: 'Gold opens the Shop, Diamonds the packages, the tileset card the schedule.' },
             { key: 'pointsLoadouts', label: 'Loadouts on the Current Points card',
               hint: 'Click the Current Points card for your saved loadouts and put one on straight away. They are made in Inventory › Loadouts.' },
+            { key: 'sessionNext', label: 'Next tileset on the tileset card',
+              hint: 'The tileset card reads "Current: ..." and below it "Next: ..." with the start time. The game\'s Active / Inactive line moves over to the Tickets card.' },
             { key: 'eventsPanel', label: 'Upcoming tilesets',
               hint: 'Click the tileset card to see what comes next.',
               sub: { key: 'eventsHours', type: 'choice', label: 'Look ahead', def: 12, options: [[3, '3 hours'], [12, '12 hours']] } },
@@ -321,6 +323,8 @@
               hint: 'When someone throws a tomato at you, the chat shows one small line with their name instead of the picture, with an x to dismiss it. The answers to your own throws become small lines too; thrown with the tomato button, all answers of one throw are one line.' },
             { key: 'chatTomatoBtn', label: 'Tomato button',
               hint: 'A tomato between the message box and Send. It lists the players you can throw at (the same list the game offers for !tomato): tick one, several or All, and throw. Each throw goes out as an ordinary !tomato line in the chat.' },
+            { key: 'chatMentions', label: 'Highlight messages that mention you',
+              hint: 'A message with your name in it (with or without @) gets a gold frame, so it stands out while the chat runs on. Your own messages are left out.' },
             { key: 'chatStick', label: 'Stay at the newest message',
               hint: 'While you are at the bottom, the chat stays there — also after a reload and when names, fonts or pictures load late. Scroll up to read, and it stays where you are.' },
         ], extra: { title: 'Enhanced chat', items: [
@@ -1434,6 +1438,23 @@
            within 9px of the edge. With those moved to the footer the card has room again, so the
            chip sits centred like the others — same rule everywhere. */
 
+        /* === TILESET CARD: CURRENT AND NEXT, ACTIVE LINE IN THE TICKETS CARD (6.36, section 8b) ===
+           The game's Active line is only hidden (it keeps writing into it; we copy what it says).
+           !important because the game sets an inline display on it for the portrait layouts. */
+        html[data-mcfo-sessnext="1"] [data-role="session-cell"] > [data-role="socket"] { display: none !important; }
+        .mcfo-nextev { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: 11px; line-height: 1.2; white-space: nowrap; }
+        .mcfo-nextev__label { color: #8da2b7; }
+        .mcfo-nextev__name { color: #d8e8f6; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+        .mcfo-nextev__time { color: #9fb2c2; flex: none; }
+        /* Tickets card: the game's three-column grid (icon, text, an empty action column) gets a
+           fourth column while the frame-rate badge sits in the third as well. */
+        [data-metric-role="tickets"]:has(> .mcfo-tstatus):has(> .mcfo-fps--card) { grid-template-columns: auto minmax(0, 1fr) auto auto !important; }
+        .mcfo-tstatus { justify-self: end; align-self: center; display: grid; justify-items: end; gap: 1px;
+                        font-size: 10px; line-height: 1.2; white-space: nowrap; color: #9fb2c2; cursor: default; }
+        .mcfo-tstatus b { font-weight: 800; color: #d8e8f6; }
+        .mcfo-tstatus[data-mcfo-state="active"] b { color: #7ee2a0; }
+        .mcfo-tstatus[data-mcfo-state="inactive"] b { color: #f3b27a; }
+
         /* === FOOTER: SEASON, EPISODE, BUILD ===
            Season and episode used to sit inside the tileset card, where they filled the upper
            line right up to the edge — which is what the Events chip was colliding with. Down
@@ -1624,6 +1645,13 @@
         /* === TOMATO NOTICE (6.25, section 9j) === */
         .mcf-chat__message[data-mcfo-tomato] > :not(.mcfo-tomato) { display: none !important; }
         .mcf-chat__message[data-mcfo-tomato-gone] { display: none !important; }
+        /* Messages that mention you (6.36): a gold frame and a gold bar on the left. Drawn as
+           shadows and an outline, so a chat background cosmetic on the row stays as it is. */
+        .mcf-chat__message[data-mcfo-mention] {
+            outline: 1px solid rgba(242, 193, 78, 0.75) !important; outline-offset: -1px;
+            box-shadow: inset 4px 0 0 #f2c14e, inset 0 0 0 999px rgba(242, 193, 78, 0.08) !important;
+            border-radius: 6px; padding: 4px 8px 5px 11px !important;
+        }
         /* The game frames a command result in a box of its own; the notice is the box. */
         .mcf-chat__message[data-mcfo-tomato] { padding: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; }
         .mcfo-tomato {
@@ -8259,6 +8287,136 @@
     }
 
     // =========================================================================================
+    // 8b. TILESET CARD: CURRENT AND NEXT (6.36)
+    // =========================================================================================
+    // The tileset card has two lines: the tileset, and the game's session line ("Active: Earning
+    // Tickets"). The session line is about tickets, so it moves over to the Tickets card, and the
+    // tileset card says what comes next instead:
+    //
+    //     Current: Base Set
+    //     Next: Even Tide (14:00)
+    //
+    // "Next" comes from the schedule the Events panel reads (/api/gameplay/chat-command/schedule,
+    // public): rows { tilesetId, startsAtUtcMs, durationMs, activeNow }, the first row that has
+    // not begun yet. Asked every ten minutes and whenever the row shown has begun; the clock is
+    // the viewer's own, and a start on another day gets the weekday in front.
+    // The game's session line is hidden, not moved: it keeps writing into it (syncStatus in
+    // app.js, text and title), and a watcher copies both over at once.
+    const NEXT_EVERY_MS = 10 * 60 * 1000;
+    const nextEv = { rows: [], at: 0, busy: false, fail: 0 };
+    let tstatusWatch = null;
+
+    async function loadNextEvents() {
+        if (nextEv.busy) return;
+        nextEv.busy = true;
+        try {
+            const r = await fetch(eventsUrl(12), { credentials: 'include', cache: 'no-store' });
+            const d = r.ok ? await r.json() : null;
+            if (!d || !d.window || !Array.isArray(d.window.rows)) throw new Error('HTTP ' + r.status);
+            // The server's clock against ours, so "has begun" means the same on both sides.
+            const skew = Number(d.window.nowUtcMs) ? Number(d.window.nowUtcMs) - Date.now() : 0;
+            nextEv.rows = d.window.rows.map(x => ({ id: x.tilesetId, start: Number(x.startsAtUtcMs) - skew }))
+                .filter(x => x.id && Number.isFinite(x.start)).sort((a, b) => a.start - b.start);
+            nextEv.fail = 0;
+        } catch (e) {
+            nextEv.fail++;   // tried again on the next beat that is due, a little later each time
+        }
+        nextEv.at = Date.now();
+        nextEv.busy = false;
+    }
+
+    function nextEventText() {
+        const now = Date.now();
+        const row = nextEv.rows.find(x => x.start > now);
+        const due = now - nextEv.at > NEXT_EVERY_MS * (nextEv.fail ? Math.min(nextEv.fail, 3) / 5 : 1);
+        if (!nextEv.busy && (due || (!row && now - nextEv.at > 60 * 1000))) loadNextEvents();
+        if (!row) return null;
+        const d = new Date(row.start);
+        const clock = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const sameDay = d.toDateString() === new Date(now).toDateString();
+        return { name: tilesetName(row.id), time: sameDay ? clock : d.toLocaleDateString([], { weekday: 'short' }) + ' ' + clock,
+                 title: `starts in ${durationText(row.start - now)}` };
+    }
+
+    function buildSessionLines() {
+        const on = !!settings.sessionNext;
+        document.documentElement.setAttribute('data-mcfo-sessnext', on ? '1' : '0');
+        const cell = role('session-cell');
+        const label = cell && cell.querySelector('[data-role="session-label"]');
+        const socket = cell && cell.querySelector(':scope > [data-role="socket"]');
+        const tickets = document.querySelector('[data-role="metric-cell"][data-metric-role="tickets"]');
+        let line = cell && cell.querySelector(':scope > .mcfo-nextev');
+        let status = document.querySelector('.mcfo-tstatus');
+
+        // "Tileset:" becomes "Current:" — and back, when switched off.
+        if (label) {
+            if (!label.hasAttribute('data-mcfo-orig')) label.setAttribute('data-mcfo-orig', label.textContent);
+            const want = on ? 'Current:' : label.getAttribute('data-mcfo-orig');
+            if (label.textContent !== want) label.textContent = want;
+        }
+        if (!on) {
+            if (line) line.remove();
+            if (status) status.remove();
+            if (tstatusWatch) { tstatusWatch.disconnect(); tstatusWatch = null; }
+            return;
+        }
+        if (cell) {
+            if (!line) {
+                line = document.createElement('span');
+                line.className = 'mcfo-nextev';
+                line.innerHTML = '<span class="mcfo-nextev__label">Next:</span><strong class="mcfo-nextev__name"></strong><span class="mcfo-nextev__time"></span>';
+                cell.appendChild(line);
+            }
+            const next = nextEventText();
+            const name = next ? next.name : (nextEv.at ? 'nothing in the next 12 hours' : '\u2026');
+            const time = next ? `(${next.time})` : '';
+            const nameEl = line.querySelector('.mcfo-nextev__name'), timeEl = line.querySelector('.mcfo-nextev__time');
+            if (nameEl.textContent !== name) nameEl.textContent = name;
+            if (timeEl.textContent !== time) timeEl.textContent = time;
+            const title = next ? next.title : '';
+            if (line.title !== title) line.title = title;
+        }
+        if (tickets && socket) {
+            if (!status) {
+                status = document.createElement('span');
+                status.className = 'mcfo-tstatus';
+            }
+            // Before the frame-rate badge, so the status stays next to the numbers.
+            const fps = tickets.querySelector(':scope > .mcfo-fps');
+            if (status.parentElement !== tickets || (fps && status.nextElementSibling !== fps)) tickets.insertBefore(status, fps || null);
+            copySessionStatus(socket, status);
+            if (!tstatusWatch || tstatusWatch.target !== socket) {
+                if (tstatusWatch) tstatusWatch.disconnect();
+                tstatusWatch = new MutationObserver(() => { const st = document.querySelector('.mcfo-tstatus'); if (st) copySessionStatus(socket, st); });
+                tstatusWatch.observe(socket, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['title'] });
+                tstatusWatch.target = socket;
+            }
+        }
+    }
+
+    // "Active: Earning Tickets" as two lines, the state in colour; anything else (Live connecting,
+    // Live reconnecting) as it is.
+    function copySessionStatus(socket, status) {
+        const text = (socket.textContent || '').trim();
+        const title = socket.getAttribute('title') || '';
+        if (status.getAttribute('data-mcfo-src') === text && status.title === title) return;
+        status.setAttribute('data-mcfo-src', text);
+        status.title = title;
+        const m = text.match(/^([^:]+):\s*(.+)$/);
+        const state = m ? m[1].trim().toLowerCase() : '';
+        status.setAttribute('data-mcfo-state', state === 'active' ? 'active' : state === 'inactive' ? 'inactive' : '');
+        status.innerHTML = '';
+        const top = document.createElement('b');
+        top.textContent = m ? m[1].trim() : text;
+        status.appendChild(top);
+        if (m) {
+            const sub = document.createElement('span');
+            sub.textContent = m[2].trim();
+            status.appendChild(sub);
+        }
+    }
+
+    // =========================================================================================
     // 9. THE TICKET RAIL: REBELLION, COLLAPSING, EXTRA CHIPS
     // =========================================================================================
     // Rebellion moves into the rail as a fixed part of it, and everything above 10 folds away
@@ -10052,6 +10210,7 @@
     function chatPass() {
         const list = document.querySelector(CHAT_LIST_SEL);
         if (list) tomatoPass(list);
+        if (list) mentionPass(list);
         if (chatSlimPresent()) return;   // the old script owns these attributes while it runs
         if (!list) return;
         const on = chatPlusActive();
@@ -10142,6 +10301,28 @@
     const TOMATO_OUT_RE = /^\s*(?:Sent a tomato to (.+?)|(You can tomato that player again in a moment)|Could not find an active (?:player|chat user) named (.+?)|(Tomato))\.?\s*$/i;
     let tomatoRun = null;               // the throw of the tomato button whose answers are gathered
     const tomatoRows = new Map();       // row key -> { run, host, gone } — the game may draw a row afresh
+
+    // --- Messages that mention you (6.36) ---
+    // Your name anywhere in a message, with or without @, as a whole word and in any case —
+    // "DreamingLucie" matches "@dreaminglucie" and "hi DreamingLucie!", not "DreamingLucie2".
+    // Only the row is marked; the text stays the game's own. Each row is checked once per name
+    // (data-mcfo-mfor), so a long chat costs nothing on the next pass.
+    let mentionRe = null, mentionFor = '';
+    function mentionPass(list) {
+        const name = settings.chatMentions ? (accountName() || '') : '';
+        if (name !== mentionFor) {
+            mentionFor = name;
+            mentionRe = name ? new RegExp('(^|[^A-Za-z0-9_])@?' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9_])', 'i') : null;
+        }
+        for (const msg of list.querySelectorAll('article.mcf-chat__message:not(.mcf-chat__private)')) {
+            if (msg.getAttribute('data-mcfo-mfor') === mentionFor) continue;
+            msg.setAttribute('data-mcfo-mfor', mentionFor);
+            const sender = (msg.querySelector('.mcf-chat__sender')?.textContent || '').trim();
+            const text = msg.querySelector('.mcf-chat__text')?.textContent || '';
+            const hit = !!mentionRe && sender.toLowerCase() !== mentionFor.toLowerCase() && mentionRe.test(text);
+            if (msg.hasAttribute('data-mcfo-mention') !== hit) msg.toggleAttribute('data-mcfo-mention', hit);
+        }
+    }
 
     function chatPassSoon() {
         const list = chatRoot() && chatRoot().querySelector('[data-role="chat-messages"]');
@@ -10806,12 +10987,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.35.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.36.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.36.0', date: '2026-09-29', items: [
+            'The tileset card reads "Current: Base Set" and below it "Next:" with the next tileset and when it starts, in your own time. The game\'s Active / Inactive line moved over to the Tickets card. Settings \u203a Header \u203a Next tileset on the tileset card',
+            'Chat messages with your name in them (with or without @) get a gold frame. Settings \u203a Chat \u203a Highlight messages that mention you',
+        ] },
         { v: '6.35.2', date: '2026-09-29', items: [
             'On the header cards only the card itself lights up when the pointer is on it; the Purchase button and the signs inside no longer light up on their own.',
             'The tomato popup closes as soon as you click Throw. The throws carry on, and their answers come as one line in the chat.',
@@ -14767,6 +14952,7 @@
         bindMenu(role('profile-entry'), 'account', a => showMenu(a, accountEntries()));
         bindMenu(firstRole('session-cell', 'tileset-indicator'), 'events', showEvents);
         buildCards();
+        buildSessionLines();
         buildFooterMeta();
         showUpdate();
         showDailyDot();
