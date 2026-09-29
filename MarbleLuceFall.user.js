@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.39.1
+// @version      6.39.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -10423,9 +10423,20 @@
         const rule = CHAT_FILTERS.find(r => settings[r.key] && r.pattern.test(text));
         return rule ? rule.id : null;
     }
+    // The name alone (6.39.2): a name flourish is drawn as a character INSIDE the sender element
+    // (span.mcf-chat__username-decoration, "\u25C6" or "\u203A"), so its textContent is
+    // "Name\u25C6" and never equals the account name.
+    function senderText(el) {
+        if (!el) return '';
+        let t = '';
+        for (const n of el.childNodes) {
+            if (n.nodeType === 3) t += n.textContent;
+            else if (n.nodeType === 1 && !n.classList.contains('mcf-chat__username-decoration')) t += n.textContent;
+        }
+        return t.trim();
+    }
     function chatSender(msg) {
-        return (msg && msg.querySelector('.mcf-chat__sender') || {}).textContent
-            ? msg.querySelector('.mcf-chat__sender').textContent.replace(/\[|\]/g, '').trim() : '';
+        return senderText(msg && msg.querySelector('.mcf-chat__sender')).replace(/\[|\]/g, '').trim();
     }
     function chatMinutes(msg) {
         const spans = msg ? msg.querySelectorAll('.mcf-chat__meta span') : [];
@@ -10607,7 +10618,7 @@
         for (const msg of list.querySelectorAll('article.mcf-chat__message:not(.mcf-chat__private)')) {
             if (msg.getAttribute('data-mcfo-mfor') === mentionFor) continue;
             msg.setAttribute('data-mcfo-mfor', mentionFor);
-            const sender = (msg.querySelector('.mcf-chat__sender')?.textContent || '').trim();
+            const sender = senderText(msg.querySelector('.mcf-chat__sender'));
             const text = msg.querySelector('.mcf-chat__text')?.textContent || '';
             const hit = !!mentionRe && sender.toLowerCase() !== mentionMe && mentionRe.test(text);
             if (msg.hasAttribute('data-mcfo-mention') !== hit) msg.toggleAttribute('data-mcfo-mention', hit);
@@ -10634,7 +10645,7 @@
         const seen = new Set(), out = [];
         const add = n => { n = String(n || '').trim(); const k = n.toLowerCase(); if (n && k !== me && !seen.has(k)) { seen.add(k); out.push(n); } };
         const list = document.querySelector(CHAT_LIST_SEL);
-        if (list) [...list.querySelectorAll('.mcf-chat__sender')].reverse().forEach(x => add(x.textContent));
+        if (list) [...list.querySelectorAll('.mcf-chat__sender')].reverse().forEach(x => add(senderText(x)));
         tomatoPick.names.forEach(add);
         return out;
     }
@@ -11012,8 +11023,8 @@
             const shown = chatRowTime(msg);
             // Within the current minute: it just came in, now is better than the minute.
             const at = shown === null || Math.abs(Date.now() - shown) < 60 * 1000 ? Date.now() : shown;
-            const who = (msg.querySelector('.mcf-chat__sender')?.textContent || '').trim().toLowerCase();
-            rec = { animal: hit.animal, n: hit.n, at, who };
+            const who = senderText(msg.querySelector('.mcf-chat__sender')).toLowerCase();
+            rec = { animal: hit.animal, n: hit.n, at, who, msg };
         }
         animalRows.set(msg, rec);
         return rec;
@@ -11021,7 +11032,8 @@
 
     // The gathering running now, as far as the chat shows it: the latest animal line, the lines
     // of the same animal before it that are less than 10 minutes apart, and the end 10 minutes
-    // after the last of them. mine: one of those lines is yours, so you are in already (6.39.1).
+    // after the last of them. mine: one of those lines is yours, so you are in already (6.39.1) —
+    // or the game said so privately ("You're already part of the pack.") after the first of them.
     function animalGathering() {
         const list = document.querySelector(CHAT_LIST_SEL);
         if (!list) return null;
@@ -11032,7 +11044,7 @@
         const ends = last.at + ANIMAL_GATHER_MS;
         if (Date.now() >= ends) return null;
         const me = (accountName() || '').toLowerCase();
-        let joined = last.n, prev = last.at, mine = !!me && last.who === me;
+        let joined = last.n, prev = last.at, mine = !!me && last.who === me, first = last;
         for (let i = recs.length - 2; i >= 0; i--) {
             const r = recs[i];
             if (r.animal !== last.animal) continue;
@@ -11040,6 +11052,13 @@
             joined = Math.max(joined, r.n);
             if (me && r.who === me) mine = true;
             prev = r.at;
+            first = r;
+        }
+        if (!mine && first.msg.isConnected) {
+            for (const p of list.querySelectorAll('article.mcf-chat__private')) {
+                if (!(first.msg.compareDocumentPosition(p) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+                if (/already part of the/i.test(p.querySelector('.mcf-chat__text')?.textContent || p.textContent || '')) { mine = true; break; }
+            }
         }
         return { animal: last.animal, joined, ends, mine };
     }
@@ -11530,12 +11549,16 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.39.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.39.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.39.2', date: '2026-09-29', items: [
+            'Animal call button: "Joined" now also turns red for players with a name flourish (the diamond or wing after the name), and when the game answers "You\'re already part of ...".',
+            'Chat: with a name flourish, @ + Tab no longer puts the flourish into the completed name, and your own messages are no longer highlighted as mentions.',
+        ] },
         { v: '6.39.1', date: '2026-09-29', items: [
             'Animal call button: once you have joined the running gathering, its entry turns red and says "Joined", and the dot on the paw turns red as well.',
         ] },
