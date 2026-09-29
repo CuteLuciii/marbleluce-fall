@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.34.1
+// @version      6.35.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -240,6 +240,8 @@
               hint: 'Click your name for Profile, Dailies, Inventory, Achievements, Leaderboards and these settings.' },
             { key: 'cardSignposts', label: 'Labels on the header cards',
               hint: 'Gold opens the Shop, Diamonds the packages, the tileset card the schedule.' },
+            { key: 'pointsLoadouts', label: 'Loadouts on the Current Points card',
+              hint: 'Click the Current Points card for your saved loadouts and put one on straight away. They are made in Inventory › Loadouts.' },
             { key: 'eventsPanel', label: 'Upcoming tilesets',
               hint: 'Click the tileset card to see what comes next.',
               sub: { key: 'eventsHours', type: 'choice', label: 'Look ahead', def: 12, options: [[3, '3 hours'], [12, '12 hours']] } },
@@ -317,6 +319,8 @@
               hint: 'Hides the empty bar the game leaves above the message box, and draws the name list for !tomato and the other targeted commands in the colours of your theme.' },
             { key: 'chatTomato', label: 'Tomatoes as a short notice',
               hint: 'When someone throws a tomato at you, the chat shows one small line with their name instead of the picture, with an x to dismiss it.' },
+            { key: 'chatTomatoBtn', label: 'Tomato button',
+              hint: 'A tomato in the chat header. It lists the players you can throw at (the same list the game offers for !tomato): tick one, several or All, and throw. Each throw goes out as an ordinary !tomato line in the chat.' },
             { key: 'chatStick', label: 'Stay at the newest message',
               hint: 'While you are at the bottom, the chat stays there — also after a reload and when names, fonts or pictures load late. Scroll up to read, and it stays where you are.' },
         ], extra: { title: 'Enhanced chat', items: [
@@ -342,6 +346,8 @@
         { title: 'Shop and dailies', blurb: 'Quest hints and euro prices in the shop, your daily rewards in one click.', items: [
             { key: 'shopQuestAlarm', label: 'Quest alarm',
               hint: 'An offer that would complete one of today\'s open shop quests gets a gold Quest tag in the shop, and the Shop button a gold dot while such an offer is in the rotation. Nothing is bought.' },
+            { key: 'questMarks', label: 'Quest dots on Rebellion and beverages',
+              hint: 'A gold dot on the Rebellion (or Royal Celebration) button and on a beverage button while one of today\'s open quests asks for it. In the Rebellion popup the tier the quest wants has a gold frame; the beverage panel names the quest and how far you are.' },
             { key: 'shopEuro', label: 'Diamond prices in euros',
               hint: 'Beside every diamond price in the shop, what those diamonds cost: from the cheapest to the dearest diamond pack, at today\'s exchange rate.' },
             { key: 'dailyClaimAll', label: 'Claim all dailies',
@@ -1350,11 +1356,11 @@
         }
         .mcfo-win__body > [data-role="desktop-chat-pane"] .mcf-chat { border: 0; border-radius: 0; }
         html[data-mcfo-chatpop="1"] [data-role="chat-collapse"],
-        html[data-mcfo-chatpop="1"] .mcfo-chatpop-btn,
+        html[data-mcfo-chatpop="1"] .mcfo-chatpop-btn:not(.mcfo-tomato-btn),
         html[data-mcfo-chatpop="1"] .mcfo-chatrail { display: none !important; }
         /* The header gets as many columns as it has buttons. The game plans three, the chat
            script four; with ours it can be five, and a fixed count makes the last one wrap. */
-        html[data-mcfo-popbtn="1"] .mcf-chat:not([data-collapsed="true"]) .mcf-chat__header {
+        html:is([data-mcfo-popbtn="1"], [data-mcfo-tombtn="1"]) .mcf-chat:not([data-collapsed="true"]) .mcf-chat__header {
             grid-template-columns: minmax(0, 1fr) !important; grid-auto-flow: column; grid-auto-columns: auto;
         }
         .mcfo-chatpop-btn {
@@ -1479,6 +1485,72 @@
         [data-role="shop-nav"], [data-metric-role="gold"] > .mcfo-signpost:not(.mcfo-signpost--float) { position: relative; }
         .mcfo-menu button.mcfo-menu__daily { color: #f2c14e; font-weight: 700; }
         .mcfo-menu button.mcfo-menu__daily:hover { background: rgba(242, 193, 78, 0.14); }
+        /* === QUEST DOTS ON REBELLION AND BEVERAGES (6.35, section 12d) ===
+           Inside the button, not hanging over its corner like the other dots: the beverage buttons
+           clip their overflow (a second text line would make the tray taller). The dots are ours
+           and always there, shown by what the html element says is wanted — so a button the game
+           or we rebuild wears the right state from its first frame. */
+        .mcfo-drink, .mcfo-rebellion { position: relative; }
+        .mcfo-questdot {
+            position: absolute; top: 3px; right: 3px; z-index: 3;
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #f2c14e; box-shadow: 0 0 0 1.5px #0b121a;
+            pointer-events: none; display: none;
+        }
+        html[data-mcfo-qreb] .mcfo-rebellion:not([data-mcfo-royal="1"]) > .mcfo-questdot,
+        html[data-mcfo-qcel] .mcfo-rebellion[data-mcfo-royal="1"] > .mcfo-questdot,
+        html[data-mcfo-qbev~="water"] .mcfo-drink[data-mcfo-drink="water"] > .mcfo-questdot,
+        html[data-mcfo-qbev~="lava"]  .mcfo-drink[data-mcfo-drink="lava"]  > .mcfo-questdot,
+        html[data-mcfo-qbev~="milk"]  .mcfo-drink[data-mcfo-drink="milk"]  > .mcfo-questdot,
+        html[data-mcfo-qbev~="acid"]  .mcfo-drink[data-mcfo-drink="acid"]  > .mcfo-questdot { display: block; }
+        /* The tier a quest asks for, in the Rebellion / Royal Celebration popup. Gold, and a small
+           tag on the top edge; the armed state (red) still wins, it is the more urgent one. */
+        .mcfo-menu--reb .mcfo-reb__tier { position: relative; }
+        .mcfo-menu--reb .mcfo-reb__tier[data-mcfo-quest]:not([data-mcfo-armed="1"]) {
+            border-color: #f2c14e; box-shadow: 0 0 0 1px #f2c14e, 0 0 12px rgba(242, 193, 78, 0.35);
+        }
+        .mcfo-reb__quest {
+            position: absolute; top: -7px; left: 50%; transform: translateX(-50%);
+            padding: 1px 6px; border-radius: 999px; background: #f2c14e; color: #1b1405;
+            font: 800 9px/1.4 system-ui, sans-serif; letter-spacing: 0.05em; text-transform: uppercase;
+            pointer-events: none; display: none;
+        }
+        .mcfo-menu--reb .mcfo-reb__tier[data-mcfo-quest] > .mcfo-reb__quest { display: block; }
+        .mcfo-bev__quest {
+            display: flex; align-items: center; gap: 6px; margin: -2px 0 8px;
+            font-size: 11px; line-height: 1.3; color: #f2c14e;
+        }
+        .mcfo-bev__quest::before { content: ''; flex: none; width: 7px; height: 7px; border-radius: 50%; background: #f2c14e; }
+
+        /* === TOMATO BUTTON (6.35, section 9j) === */
+        .mcfo-tomato-btn svg { width: 17px; height: 17px; }
+        .mcfo-menu--tomato { width: 250px; padding: 10px 12px 12px; }
+        .mcfo-tom__head { font-weight: 800; font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; color: #ff9a8a;
+                          padding-bottom: 7px; border-bottom: 1px solid #243443; margin-bottom: 6px; }
+        .mcfo-tom__list { max-height: min(300px, 50vh); overflow: auto; display: grid; gap: 1px; }
+        .mcfo-tom__row { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 5px; cursor: pointer;
+                         font-size: 13px; line-height: 1.2; }
+        .mcfo-tom__row:hover { background: #16283a; }
+        .mcfo-tom__row input { margin: 0; accent-color: #e0483a; flex: none; }
+        .mcfo-tom__row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mcfo-tom__row--all { font-weight: 800; border-bottom: 1px solid #16232f; border-radius: 5px 5px 0 0; margin-bottom: 2px; }
+        .mcfo-tom__empty { padding: 8px 6px; font-size: 12px; color: #8da2b7; }
+        .mcfo-menu button.mcfo-tom__go { margin-top: 9px; text-align: center; font-weight: 800;
+                                         background: #5a1d18; border: 1px solid #b0453a; color: #ffe1dc; }
+        .mcfo-menu button.mcfo-tom__go:hover:not(:disabled) { background: #74261f; }
+        .mcfo-menu button.mcfo-tom__go:disabled { opacity: 0.45; cursor: not-allowed; }
+        .mcfo-tom__msg { min-height: 15px; margin-top: 6px; font-size: 11px; color: #a9bac8; }
+        .mcfo-tom__msg[data-tone="error"] { color: #f3a4a4; }
+
+        /* === LOADOUTS ON THE CURRENT POINTS CARD (6.35, section 12e) === */
+        [data-metric-role="current-points"].mcfo-card { cursor: pointer; }
+        .mcfo-menu--lo { min-width: 230px; max-width: 320px; }
+        .mcfo-lo__head { padding: 4px 12px 7px; font-weight: 800; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: #9ab0c0; }
+        .mcfo-menu button.mcfo-lo__item { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+        .mcfo-lo__item small { flex: none; font-size: 11px; opacity: 0.55; }
+        .mcfo-menu button.mcfo-lo__item[data-mcfo-last] b::after { content: ' \\2713'; color: #9fd8b6; }
+        .mcfo-menu button.mcfo-lo__item:disabled { opacity: 0.5; cursor: progress; }
+        .mcfo-lo__empty { padding: 6px 12px 8px; font-size: 12px; color: #8da2b7; max-width: 260px; line-height: 1.35; }
         .mcfo-notices {
             position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 10045;
             display: grid; gap: 6px; width: min(560px, calc(100vw - 32px)); pointer-events: none;
@@ -6657,6 +6729,26 @@
         if (vorhanden) { restoreWindow(path); return vorhanden; }
 
         const w = makeWindow(path, title);
+        // Dailies (6.35): the page reads its quests once, when it loads. A refresh button in the
+        // title bar loads just that page again, so progress shows without closing the window.
+        if (path === '/dailies') {
+            const re = document.createElement('button');
+            re.type = 'button';
+            re.className = 'mcfo-win__btn';
+            re.setAttribute('data-mcfo-win', 'reload');
+            re.title = 'Refresh';
+            re.innerHTML = '&#8635;';
+            re.addEventListener('click', e => {
+                e.stopPropagation();
+                const f = w.frame;
+                if (!f) return;
+                // Hidden until it wears the theme again, like on opening; the load handler shows it.
+                f.removeAttribute('data-mcfo-ready');
+                try { f.contentWindow.location.reload(); } catch (err) { f.src = path; }
+                setTimeout(loadDailies, 1500);   // the dots on the page outside follow along
+            });
+            w.el.querySelector('.mcfo-win__head').insertBefore(re, w.el.querySelector('[data-mcfo-win="min"]'));
+        }
         const laedt = document.createElement('div');
         laedt.className = 'mcfo-loading';
         laedt.textContent = 'Loading …';
@@ -7289,6 +7381,13 @@
             head.textContent = bev.label;
             head.style.color = bev.stroke === '#ffffff' ? '#e8e2c8' : bev.stroke;
             menu.appendChild(head);
+            // The open quests that ask for this beverage (12d), with how far you are.
+            for (const q of questMarkFor('bev', bev.type)) {
+                const line = document.createElement('div');
+                line.className = 'mcfo-bev__quest';
+                line.textContent = 'Quest: ' + (q.title || 'Beverage') + questProgress(q);
+                menu.appendChild(line);
+            }
 
             for (const [size, sizeLabel] of BEV_SIZES) {
                 const row = document.createElement('div');
@@ -7398,6 +7497,7 @@
                     e.stopPropagation();
                     showBeveragePanel(bev, b);
                 });
+                questDot(b);   // shown or not by the html element (12d), so right from the first frame
                 stack.appendChild(b);
             }
             content.appendChild(stack);
@@ -8079,6 +8179,15 @@
             run: () => openPage('/payment/packages', 'Buy Diamonds'),
         },
         {
+            // 6.35: a quick way to the saved loadouts (12e), without opening the inventory.
+            id: 'points',
+            find: () => document.querySelector('[data-role="metric-cell"][data-metric-role="current-points"]'),
+            label: 'Loadouts',
+            place: 'float',
+            setting: 'pointsLoadouts',
+            run: el => showLoadoutMenu(el),
+        },
+        {
             id: 'account',
             find: () => role('profile-entry'),
             label: () => (signedOut() ? 'Log in' : 'Account'),
@@ -8111,18 +8220,19 @@
             const el = card.find();
             if (!el) continue;
 
-            el.classList.toggle('mcfo-card', !!settings.cardSignposts);
+            const on = !!settings.cardSignposts && (!card.setting || !!settings[card.setting]);
+            el.classList.toggle('mcfo-card', on);
             const label = typeof card.label === 'function' ? card.label() : card.label;
-            setSignpost(el, settings.cardSignposts ? label : null, card.place);
+            setSignpost(el, on ? label : null, card.place);
 
             if (!card.run) continue;
             if (el.getAttribute('data-mcfo-card') === card.id) continue;
             el.setAttribute('data-mcfo-card', card.id);
             el.addEventListener('click', e => {
-                if (!settings.cardSignposts) return;
+                if (!settings.cardSignposts || (card.setting && !settings[card.setting])) return;
                 e.preventDefault();
                 e.stopPropagation();
-                card.run();
+                card.run(el);
             }, true);
         }
     }
@@ -8186,6 +8296,7 @@
         if ((reb.getAttribute('data-mcfo-royal') === '1') !== royal) {
             if (royal) reb.setAttribute('data-mcfo-royal', '1'); else reb.removeAttribute('data-mcfo-royal');
             reb.textContent = royal ? 'Royal Celebration' : 'Rebellion';
+            questDot(reb);   // textContent took the quest dot along (12d)
             reb.title = royal ? 'Open Royal Celebrations (King only, once per reign)' : 'Open Rebellion purchases';
             // A popup opened in the other mode would buy the wrong thing — close it.
             closeMenus?.();
@@ -9025,7 +9136,7 @@
                 b.className = 'mcfo-reb__tier';
                 b.style.setProperty('--mcfo-tier', tier.hue);
                 b.setAttribute('data-mcfo-cost', String(tier.cost));
-                b.innerHTML = '<span class="mcfo-reb__mult"></span><span class="mcfo-reb__tiles"></span><span class="mcfo-reb__cost"></span>';
+                b.innerHTML = '<span class="mcfo-reb__mult"></span><span class="mcfo-reb__tiles"></span><span class="mcfo-reb__cost"></span><span class="mcfo-reb__quest">Quest</span>';
                 b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); rebellionTierClicked(tier, b, m); });
                 grid.appendChild(b);
             }
@@ -9078,6 +9189,8 @@
         for (const b of menu.querySelectorAll('.mcfo-reb__tier')) {
             const tier = REB_TIERS.find(t => String(t.cost) === b.getAttribute('data-mcfo-cost'));
             const block = nativeTier(tier.cost);
+            const quest = questMarkFor('reb', tier.mult).length > 0;
+            if (b.hasAttribute('data-mcfo-quest') !== quest) b.toggleAttribute('data-mcfo-quest', quest);
             const nb = block && block.querySelector('[data-role="rebellion-tier-start"]');
             const usable = !!verifiedStartButton(tier);
             const armed = b.getAttribute('data-mcfo-armed') === '1';
@@ -9201,7 +9314,7 @@
                 b.className = 'mcfo-reb__tier';
                 b.style.setProperty('--mcfo-tier', tier.hue);
                 b.setAttribute('data-mcfo-cel', tier.id);
-                b.innerHTML = '<span class="mcfo-reb__mult"></span><span class="mcfo-reb__tiles"></span><span class="mcfo-reb__cost"></span>';
+                b.innerHTML = '<span class="mcfo-reb__mult"></span><span class="mcfo-reb__tiles"></span><span class="mcfo-reb__cost"></span><span class="mcfo-reb__quest">Quest</span>';
                 b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); celebrationTierClicked(tier, b, m); });
                 grid.appendChild(b);
             }
@@ -9224,6 +9337,8 @@
         for (const b of menu.querySelectorAll('.mcfo-reb__tier')) {
             const tier = CEL_TIERS.find(t => t.id === b.getAttribute('data-mcfo-cel'));
             const block = nativeCelTier(tier.id);
+            const quest = questMarkFor('cel', tier.id).length > 0;
+            if (b.hasAttribute('data-mcfo-quest') !== quest) b.toggleAttribute('data-mcfo-quest', quest);
             const usable = !!verifiedCelStart(tier);
             if (b.getAttribute('data-mcfo-armed') === '1' && !usable) disarm(b);
             b.disabled = !usable;
@@ -10031,6 +10146,126 @@
         }
     }
 
+    // --- The tomato button (6.35) ---
+    // Throwing is the game's own !tomato, typed into its chat form for you: one line per player,
+    // "!tomato <name>". The game's client has sent a tomato with a name but without a picked
+    // suggestion since v0.10.1 (targetSelectionRequired leaves tomato out), the server finds the
+    // player by name. So nothing is assembled here, and a refusal (the cooldown is 60 s per
+    // thrower and target) comes back in the chat as the game's own line.
+    // The names are the list the game offers after "!tomato": /api/gameplay/chat-command/tomato-targets,
+    // { ok, users: [{ playerId, displayName }] } — players in the game, not only those in the chat.
+    const TOMATO_GAP_MS = 700;     // between two lines, so the chat does not take them for a flood
+    const tomatoPick = { names: [], at: 0, chosen: new Set(), busy: false };
+
+    async function loadTomatoTargets() {
+        if (Date.now() - tomatoPick.at < 10 * 1000) return tomatoPick.names;
+        const res = await fetch('/api/gameplay/chat-command/tomato-targets', { credentials: 'same-origin', cache: 'no-store' });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body || body.ok === false || !Array.isArray(body.users)) throw new Error('The game did not hand out the list (HTTP ' + res.status + ').');
+        const me = (accountName() || '').toLowerCase();
+        const seen = new Set();
+        tomatoPick.names = body.users.map(u => String(u.displayName || '').trim())
+            .filter(n => n && n.toLowerCase() !== me && !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()))
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        tomatoPick.at = Date.now();
+        return tomatoPick.names;
+    }
+
+    function drawTomatoButton() {
+        const on = !!settings.chatTomatoBtn && !signedOut();
+        document.documentElement.setAttribute('data-mcfo-tombtn', on ? '1' : '0');
+        const header = chatRoot() && chatRoot().querySelector('.mcf-chat__header');
+        let btn = document.querySelector('.mcfo-tomato-btn');
+        if (!on) { if (btn) btn.remove(); return; }
+        if (!header || (btn && btn.parentElement === header)) return;
+        if (!btn) {
+            btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mcfo-chatpop-btn mcfo-tomato-btn';   // the pop-out button's look, skins included
+            btn.title = 'Throw tomatoes';
+            btn.setAttribute('aria-label', 'Throw tomatoes');
+            btn.innerHTML = TOMATO_ICON;
+            btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); showTomatoPanel(btn); });
+        }
+        // Left of the game's buttons, next to the title.
+        const first = header.querySelector('.mcf-chat__cosmetics-toggle, .mcfo-chatpop-btn:not(.mcfo-tomato-btn), [data-role="chat-collapse"]');
+        header.insertBefore(btn, first || null);
+    }
+
+    function showTomatoPanel(anchor) {
+        const menu = showPanel(anchor, 'mcfo-menu--tomato', m => {
+            m.innerHTML = '<div class="mcfo-tom__head">Throw tomatoes</div>'
+                + '<div class="mcfo-tom__list"><div class="mcfo-tom__empty">Loading players …</div></div>'
+                + '<button type="button" class="mcfo-tom__go" disabled>Throw</button>'
+                + '<div class="mcfo-tom__msg"></div>';
+        });
+        if (!menu) return;
+        const list = menu.querySelector('.mcfo-tom__list');
+        const go = menu.querySelector('.mcfo-tom__go');
+        const msg = menu.querySelector('.mcfo-tom__msg');
+        const say = (text, tone) => { msg.textContent = text; msg.setAttribute('data-tone', tone || ''); };
+        const count = () => {
+            const n = tomatoPick.names.filter(x => tomatoPick.chosen.has(x)).length;
+            go.disabled = !n || tomatoPick.busy;
+            go.textContent = tomatoPick.busy ? 'Throwing …' : n ? `Throw at ${n}` : 'Throw';
+            const all = list.querySelector('.mcfo-tom__row--all input');
+            if (all) { all.checked = n > 0 && n === tomatoPick.names.length; all.indeterminate = n > 0 && n < tomatoPick.names.length; }
+        };
+        const row = (label, checked, onChange, extra) => {
+            const r = document.createElement('label');
+            r.className = 'mcfo-tom__row' + (extra ? ' ' + extra : '');
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = checked;
+            box.addEventListener('change', () => { onChange(box.checked); count(); });
+            const name = document.createElement('span');
+            name.textContent = label;
+            r.append(box, name);
+            return r;
+        };
+        loadTomatoTargets().then(names => {
+            if (!menu.isConnected) return;
+            // Picks from last time stay, as long as the player is still there: throwing at the
+            // same few again after the cooldown is the usual case.
+            for (const n of [...tomatoPick.chosen]) if (!names.includes(n)) tomatoPick.chosen.delete(n);
+            list.innerHTML = '';
+            if (!names.length) {
+                list.innerHTML = '<div class="mcfo-tom__empty">Nobody to throw at right now.</div>';
+            } else {
+                list.appendChild(row(`All (${names.length})`, false, on => {
+                    names.forEach(n => on ? tomatoPick.chosen.add(n) : tomatoPick.chosen.delete(n));
+                    list.querySelectorAll('.mcfo-tom__row:not(.mcfo-tom__row--all) input').forEach(b => { b.checked = on; });
+                }, 'mcfo-tom__row--all'));
+                for (const n of names) list.appendChild(row(n, tomatoPick.chosen.has(n), on => on ? tomatoPick.chosen.add(n) : tomatoPick.chosen.delete(n)));
+            }
+            count();
+            placePanel(anchor, menu);
+        }).catch(e => {
+            if (!menu.isConnected) return;
+            list.innerHTML = '<div class="mcfo-tom__empty"></div>';
+            list.firstChild.textContent = e.message || String(e);
+        });
+        go.addEventListener('click', async e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const targets = tomatoPick.names.filter(n => tomatoPick.chosen.has(n));
+            if (!targets.length || tomatoPick.busy) return;
+            tomatoPick.busy = true; count();
+            let sent = 0, why = '';
+            for (const [i, n] of targets.entries()) {
+                if (i) await new Promise(r => setTimeout(r, TOMATO_GAP_MS));
+                const r = sendChatLine('!tomato ' + n);
+                if (r.ok) sent++; else { why = r.why; break; }
+                if (menu.isConnected) say(`Thrown at ${sent} of ${targets.length} …`);
+            }
+            tomatoPick.busy = false;
+            if (!menu.isConnected) return;
+            count();
+            if (why) say(`${sent} of ${targets.length} thrown. ${why}.`, 'error');
+            else say(`${sent} thrown. The chat shows what landed.`);
+        });
+    }
+
     // =========================================================================================
     // 9h. GROWING MESSAGE BOX
     // =========================================================================================
@@ -10451,12 +10686,18 @@
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.34.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.35.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.35.0', date: '2026-09-29', items: [
+            'Quest dots: while one of today\'s open quests asks for a Rebellion, a Royal Celebration or a beverage, its button carries a gold dot. In the Rebellion popup the tier the quest wants has a gold frame and a Quest tag, and the beverage panel names the quest and how far you are. Settings \u203a Shop and dailies \u203a Quest dots on Rebellion and beverages',
+            'Tomato button in the chat header: tick one, several or All of the players you can throw at, and throw. Each throw is an ordinary !tomato line, so the chat shows what landed. Settings \u203a Chat \u203a Tomato button',
+            'The Dailies window has a refresh button in its title bar: it loads just the Dailies page again, so new progress shows without closing the window.',
+            'Click the Current Points card for your saved loadouts and put one on in one click. Settings \u203a Header \u203a Loadouts on the Current Points card',
+        ] },
         { v: '6.34.1', date: '2026-09-28', items: [
             'Settings \u203a On the throne: Set the toll is gone. The game now has its own Default Toll in the inventory (for taking the throne and for Royal Celebrations), and two setters would only fight each other. Pouring beverages stays.',
         ] },
@@ -13076,7 +13317,7 @@
     const dailyWaiting = () => (settings.dailyClaimAll || settings.dailyAutoClaim) && !signedOut() ? dailyClaimable(daily.data).n : 0;
 
     async function loadDailies() {
-        if (signedOut() || (!settings.dailyClaimAll && !settings.dailyAutoClaim && !settings.shopQuestAlarm)) return;
+        if (signedOut() || (!settings.dailyClaimAll && !settings.dailyAutoClaim && !settings.shopQuestAlarm && !settings.questMarks)) return;
         try { daily.data = await apiJson('/api/dailies'); daily.at = Date.now(); }
         catch (e) { return; }   // a busy server evening; the next beat tries again
         // Straight after the reset the new quests and items are there — look again then, instead
@@ -13192,6 +13433,78 @@
         const lo = f(money.usdLo), hi = f(money.usdHi || money.usdLo);
         return lo === hi ? '≈ ' + lo : `≈ ${lo}–${hi}`;
     }
+
+    // --- Quest dots on Rebellion and beverages (6.35) ---
+    // Three quest families name exactly what they want (shared/dailies.js of the game):
+    //   rebellion:<tier>            { tier }            "Launch exactly a x5 Rebellion", tiers 5/10/17/25
+    //   celebration:<tierId>        { tierId }          Royal Celebration, royal_500 ... royal_2500
+    //   beverage:<type>:<n>:<cur>   { beverageType }    "Buy n Water Beverages", any size or currency
+    //   beverage:sampler:<a+b>      { requiredTypes }   one of each; which of them are done the API
+    //                                                   does not say, so all of them keep their dot
+    // Read from the /api/dailies we fetch anyway; a purchase or launch asks again a little later
+    // (see below), so a dot goes once the quest is done instead of up to five minutes after.
+    const questMarks = { bev: new Map(), reb: new Map(), cel: new Map() };   // key -> [quest]
+    function questDot(el) {
+        if (el.querySelector(':scope > .mcfo-questdot')) return;
+        const dot = document.createElement('span');
+        dot.className = 'mcfo-questdot';
+        el.appendChild(dot);
+    }
+    function questMarkFor(kind, key) { return questMarks[kind].get(String(key)) || []; }
+    function questProgress(q) {
+        const n = Number(q.progress), t = Number(q.target);
+        return Number.isFinite(n) && t > 1 ? ` (${Math.min(n, t)}/${t})` : '';
+    }
+    function paintQuestMarks() {
+        for (const m of Object.values(questMarks)) m.clear();
+        const add = (kind, key, q) => { const k = String(key); if (!questMarks[kind].has(k)) questMarks[kind].set(k, []); questMarks[kind].get(k).push(q); };
+        if (settings.questMarks && !signedOut()) {
+            for (const q of (daily.data && daily.data.quests && daily.data.quests.quests) || []) {
+                if (q.complete === true || q.claimState === 'claimed') continue;
+                const id = String(q.definitionId || ''), part = id.split(':'), p = q.parameters || {};
+                if (part[0] === 'rebellion') add('reb', p.tier ?? part[1], q);
+                else if (part[0] === 'celebration') add('cel', p.tierId || part[1], q);
+                else if (part[0] === 'beverage') {
+                    const types = Array.isArray(p.requiredTypes) ? p.requiredTypes
+                                : [p.beverageType || (part[1] === 'sampler' ? '' : part[1])];
+                    for (const t of types) if (t) add('bev', String(t).toLowerCase(), q);
+                }
+            }
+        }
+        const root = document.documentElement;
+        const setAttr = (name, value) => {
+            if (value) { if (root.getAttribute(name) !== value) root.setAttribute(name, value); }
+            else if (root.hasAttribute(name)) root.removeAttribute(name);
+        };
+        setAttr('data-mcfo-qbev', [...questMarks.bev.keys()].join(' '));
+        setAttr('data-mcfo-qreb', questMarks.reb.size ? '1' : '');
+        setAttr('data-mcfo-qcel', questMarks.cel.size ? '1' : '');
+        // Our buttons are rebuilt now and then (the tray with every king update, the Rebellion
+        // label when the reign changes), so the dot is put back where it went missing.
+        for (const el of document.querySelectorAll('.mcfo-drink, .mcfo-rebellion')) {
+            questDot(el);
+            const kind = el.classList.contains('mcfo-drink') ? 'bev' : el.hasAttribute('data-mcfo-royal') ? 'cel' : 'reb';
+            const qs = kind === 'bev' ? questMarkFor('bev', el.getAttribute('data-mcfo-drink'))
+                                      : [...questMarks[kind].values()].flat();
+            const tip = qs.length ? 'Quest: ' + qs.map(q => (q.title || '') + questProgress(q)).join(' / ') : '';
+            // The button's own tooltip stays; the quest goes below it, and comes off again. What
+            // we wrote is remembered, so a tooltip the button changed itself counts as its own.
+            const cur = el.title || '';
+            const base = cur === el.getAttribute('data-mcfo-qfull') ? el.getAttribute('data-mcfo-qbase') || '' : cur;
+            const want = tip ? (base ? base + '\n' : '') + tip : base;
+            if (cur !== want) el.title = want;
+            if (el.getAttribute('data-mcfo-qfull') !== want) { el.setAttribute('data-mcfo-qbase', base); el.setAttribute('data-mcfo-qfull', want); }
+        }
+    }
+    // After a beverage, a Rebellion or a Royal Celebration went out — through our buttons or the
+    // game's, ours press the game's anyway — the quests are read again, so the dot can go.
+    document.addEventListener('click', e => {
+        const t = e.target && e.target.closest && e.target.closest(
+            '[data-action="king-beverage-activate"], [data-role="rebellion-tier-start"], [data-role="royal-celebration-tier-start"]');
+        if (!t || !settings.questMarks) return;
+        setTimeout(loadDailies, 3000);
+        setTimeout(loadDailies, 12000);
+    }, true);
 
     // --- Quest alarm ---
     function openShopQuests() {
@@ -13623,6 +13936,58 @@
         try { const s = JSON.parse(sessionStorage.getItem(LO_STATUS) || 'null'); return s && Date.now() - s.at < 5 * 60 * 1000 ? s : null; } catch (e) { return null; }
     }
     const loEsc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    // --- On the Current Points card (6.35) ---
+    // The saved loadouts as a menu; one click puts one on, the result comes as a short notice.
+    // The last one put on this way carries a tick — a reminder, not a check of what you wear.
+    const LO_LAST = 'mcfo_lo_last';
+    async function showLoadoutMenu(anchor) {
+        if (openMenu && openMenu.anchor === anchor) { closeMenus(); return; }
+        try { await loKnowPlayer(); } catch (e) { notice(loEsc(e.message || e), 'error'); return; }
+        let last = '';
+        try { last = localStorage.getItem(LO_LAST) || ''; } catch (e) { /* blocked */ }
+        const list = Object.values(loMine()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        showPanel(anchor, 'mcfo-menu--lo', m => {
+            m.innerHTML = '<div class="mcfo-lo__head">Put on a loadout</div>';
+            if (!list.length) {
+                const p = document.createElement('div');
+                p.className = 'mcfo-lo__empty';
+                p.textContent = 'No loadouts saved yet. Save what you wear in the inventory, on the Loadouts bar.';
+                m.appendChild(p);
+            }
+            for (const l of list) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'mcfo-lo__item';
+                if (l.name.toLowerCase() === last) b.setAttribute('data-mcfo-last', '1');
+                const n = Object.keys(l.slots || {}).length;
+                b.innerHTML = `<b>${loEsc(l.name)}</b><small>${n} slot${n === 1 ? '' : 's'}</small>`;
+                b.disabled = lo.busy;
+                b.addEventListener('click', ev => { ev.stopPropagation(); closeMenus(); loQuickPutOn(l); });
+                m.appendChild(b);
+            }
+            m.appendChild(document.createElement('hr'));
+            const inv = document.createElement('button');
+            inv.type = 'button';
+            inv.textContent = 'Manage loadouts …';
+            inv.addEventListener('click', ev => { ev.stopPropagation(); closeMenus(); openPage('/inventory', 'Inventory'); });
+            m.appendChild(inv);
+        });
+    }
+    async function loQuickPutOn(l) {
+        if (lo.busy) return;
+        lo.busy = true; loRedraw();
+        try {
+            const r = await loLoad(l);
+            try { localStorage.setItem(LO_LAST, l.name.toLowerCase()); } catch (e) { /* blocked */ }
+            const bad = r.lines.filter(([t]) => t === 'warn' || t === 'error');
+            notice(`<b>${loEsc(l.name)}</b> put on, ${r.changed} slot${r.changed === 1 ? '' : 's'} changed.`
+                + (bad.length ? ' ' + bad.map(([, x]) => loEsc(x)).join(' · ') : ''), bad.some(([t]) => t === 'error') ? 'error' : '');
+            loSay(`<b>${loEsc(l.name)}</b> put on, ${r.changed} slot${r.changed === 1 ? '' : 's'} changed.`, bad.length ? 'warn' : 'done');
+        } catch (e) {
+            notice(loEsc(e.message || e), 'error');
+        }
+        lo.busy = false; loRedraw();
+    }
     async function loRun(job) {
         if (lo.busy) return;
         lo.busy = true; loRedraw();
@@ -14290,11 +14655,13 @@
         soundDefaultOnce();
         drawChatRail();
         drawChatPop();
+        drawTomatoButton();
         applyChatPlus();
         applyChatGrow();
         applyChatStick();
         watchTray();
         buildKingTray();
+        paintQuestMarks();
         buildAttackAssist();
         syncDrinkHeight();
         throneTick();
