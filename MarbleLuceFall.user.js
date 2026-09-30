@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.41
+// @version      6.42
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -287,6 +287,7 @@
             { key: 'kcName',     label: 'King name',             hint: 'top left' },
             { key: 'kcReign',    label: 'Reign number',          hint: 'top left' },
             { key: 'kcDuration', label: 'Reign duration',        hint: 'top left' },
+            { key: 'kcVip',      label: 'VIP tier',              hint: 'top left, under the title, in the colour of the tier, added by MarbleLuceFall' },
             { key: 'kcGold',     label: 'Gold this reign',       hint: 'top right' },
             { key: 'kcTolls',    label: 'Points from tolls',     hint: 'top right' },
             { key: 'kcThwarted', label: 'Challengers thwarted',  hint: 'top right' },
@@ -924,6 +925,8 @@
         /* Our line inside the game's right column: same font, the value in the game's gold. */
         .mcfo-kc-toll b { font-weight: 700; color: #f4d28b; }
         .mcfo-kc-toll[data-mcfo-stale="1"] { opacity: 0.45; }
+        /* The king's VIP tier under the title line; the colour comes inline from the tier. */
+        .mcfo-kc-vip { font-weight: 700; }
 
         /* === TIDY FOOTER ===
            Driven by an attribute on <html> so that switching a button back on brings it straight
@@ -6539,6 +6542,71 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         line.setAttribute('data-mcfo-stale', (Date.now() - kingState.at > KING_POLL_MS * 2) ? '1' : '0');
     }
 
+    // The king's VIP tier (6.42), one more line in the game's left column, under "<title> <time>".
+    // The king snapshot carries no VIP, but the public leaderboard does: statKey=vip_points lists
+    // every player with VIP points (all_time, no login needed; 52 players on 2026-10-01). Whoever is
+    // missing has fewer than 10 points, which the game calls plain "Initiate". Tier names and colours
+    // exactly as the game has them (_shared/mcf-shared/vip.js, chatPane.js MATERIAL_TEXT_COLORS).
+    const VIP_MATERIALS = ['Bronze', 'Silver', 'Gold', 'Emerald', 'Sapphire', 'Ruby', 'Diamond', 'Amethyst', 'Ethereal', 'Cosmic'];
+    const VIP_PRESTIGE  = ['Initiate', 'Honored', 'Favored', 'Revered', 'Exalted', 'Ascendant', 'Radiant', 'Imperial', 'Eternal', 'Cosmic'];
+    const VIP_STARTS    = [10, 115, 270, 475, 730, 1040, 1445, 1900, 2425, 3200];
+    const VIP_STEPS     = [10, 15, 20, 25, 30, 40, 45, 50, 75, 100];
+    const VIP_COLOURS   = { Bronze: '#eeaa66', Silver: '#f6fbff', Gold: '#ffe36e', Emerald: '#4ff0a7', Sapphire: '#76c8ff',
+                            Ruby: '#ff6c86', Diamond: '#e5fdff', Amethyst: '#df9dff', Ethereal: '#bcfff0', Cosmic: '#ffc1ff' };
+    const VIP_BOARD_URL = '/api/leaderboards?windowType=all_time&statKey=vip_points&limit=100';
+    const VIP_BOARD_MS  = 5 * 60 * 1000;
+    const vipBoard = { at: 0, busy: false, full: false, byName: new Map(), missFor: '', missAt: 0 };
+
+    function vipTier(points) {
+        let tier = { label: 'Initiate', material: null };
+        if (!(points >= 10)) return tier;
+        VIP_PRESTIGE.forEach((prestige, p) => VIP_MATERIALS.forEach((material, m) => {
+            if (VIP_STARTS[p] + VIP_STEPS[p] * m <= points) tier = { label: `${material} ${prestige}`, material };
+        }));
+        return tier;
+    }
+    async function refreshVipBoard() {
+        if (vipBoard.busy) return;
+        vipBoard.busy = true;
+        try {
+            const res = await fetch(VIP_BOARD_URL, { credentials: 'include' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const rows = ((await res.json()) || {}).rows || [];
+            vipBoard.byName = new Map(rows.map(r => [String(r.displayName || '').toLowerCase(), Number(r.value) || 0]));
+            vipBoard.full = rows.length >= 100;   // a full page may have cut someone off: then "missing" proves nothing
+            vipBoard.at = Date.now();
+        } catch (e) {
+            vipBoard.at = Date.now() - VIP_BOARD_MS + 60 * 1000;   // try again in a minute
+        } finally { vipBoard.busy = false; }
+    }
+    function drawVipLine(labels) {
+        const left = labels.querySelector('.mcf-king-corner-labels__left');
+        const nameEl = labels.querySelector('[data-role="king-corner-name"]');
+        let line = labels.querySelector('.mcfo-kc-vip');
+        if (!left || !nameEl || !settings.kingCorner || !settings.kcVip) { line?.remove(); return; }
+        if (Date.now() - vipBoard.at > VIP_BOARD_MS) refreshVipBoard();
+        // The name as the game shows it, minus its crown: always the current king, even between polls.
+        const name = (nameEl.textContent || '').replace(/^\s*\u{1F451}\uFE0F?\s*/u, '').trim().toLowerCase();
+        if (!name || !vipBoard.at) { line?.remove(); return; }
+        let points = vipBoard.byName.get(name);
+        if (points === undefined) {
+            // A new king who is not on the board: fetch once more (points may have just come in), at most once a minute
+            if (vipBoard.missFor !== name || Date.now() - vipBoard.missAt > 60 * 1000) { vipBoard.missFor = name; vipBoard.missAt = Date.now(); refreshVipBoard(); }
+            if (vipBoard.full) { line?.remove(); return; }
+            points = 0;
+        }
+        const tier = vipTier(points);
+        if (!line || line.parentNode !== left) {
+            line?.remove();
+            line = document.createElement('span');
+            line.className = 'mcfo-kc-vip';
+            left.appendChild(line);
+        }
+        if (line.textContent !== tier.label) line.textContent = tier.label;
+        const colour = tier.material ? VIP_COLOURS[tier.material] : '';
+        if (line.style.color !== colour) line.style.color = colour;
+    }
+
     function drawKingFields() {
         const anchor = kingAnchor();
         if (!anchor) return;
@@ -6546,7 +6614,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
 
         // Since game v0.10.1: the game draws the read-outs itself, ours join them (see above).
         const labels = document.querySelector('[data-role="king-corner-labels"]');
-        if (labels) { clear(); drawTollLine(labels); return; }
+        if (labels) { clear(); drawTollLine(labels); drawVipLine(labels); return; }
 
         // Older builds without the game's block: our own two fields, as before 6.28.
         const showName = settings.kingCorner && settings.kcName;
@@ -11673,12 +11741,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.41';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.42';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.42', date: '2026-10-01', items: [
+            'King tile: the King\'s VIP tier (for example "Ruby Initiate") now sits under the title line, in the colour the game gives that tier. Switch it in Settings \u203a King tile \u203a VIP tier.',
+        ] },
         { v: '6.41', date: '2026-09-29', items: [
             'Inventory: the new unlock info (the round i next to royal titles and default tolls) and its popup now wear your theme - ring in the colour of the card edges, popup in the theme\'s panel colour, accent on hover.',
             'Windows reload their page by themselves when the game was updated in the meantime. Until now a window could keep showing the page from before the update (the unlock info only appeared after Ctrl+Shift+R).',
