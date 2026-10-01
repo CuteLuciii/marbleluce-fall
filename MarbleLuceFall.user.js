@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.42
+// @version      6.43
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -8004,6 +8004,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         if (assist.active) {
             state = assist.phase === 'rebid' ? 'warn' : 'wait';
             text = { unbid: 'UNBIDDING\u2026', tile: 'WAITING: IN TILE', lava: 'WAITING: LAVA ' + lavaLeft(),
+                     lockout: 'NEW KING SAFE ' + lavaLeft(),
                      rebid: 'BID CAME BACK', attack: 'ATTACKING\u2026', watch: 'ATTACK RUNNING\u2026',
                      wait: 'WAITING\u2026' }[assist.phase] || 'WAITING\u2026';
             if (assist.tries > 1) text = 'TRY ' + assist.tries + ' \u00b7 ' + text;
@@ -8113,12 +8114,18 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 redrawAssist(); assist.timer = setTimeout(assistTick, ASSIST_POLL_MS); return;
             }
             if (free) { assist.phase = 'attack'; redrawAssist(); pressWhenReleased(now); return; }
-            if (reasons.includes('lava_cooldown_active')) {
+            const lava = reasons.includes('lava_cooldown_active');
+            if (lava || reasons.includes('lockout_active')) {
                 // Sat out, nothing cleared: the cooldown only runs down with the clock, and an
                 // unbid now would throw away a bid for nothing (the bot's lesson of 05.09.).
-                assist.phase = 'lava';
-                assist.lavaUntil = Number(me.lavaCooldownUntilMs) || assist.lavaUntil;
-                if (now - assist.started > ASSIST_LAVA_MAX_MS) { assistStop('LAVA TOO LONG'); return; }
+                // Since 6.43 the same for lockout_active, the 3 minutes in which a freshly crowned
+                // King cannot be attacked (king.lockoutUntilMs): autobid keeps playing meanwhile.
+                // Each block has its own clock: lava, then a new King's lockout, would add up to 6 min.
+                const kind = lava ? 'lava' : 'lockout';
+                if (assist.phase !== kind) assist.sitSince = now;
+                assist.phase = kind;
+                assist.lavaUntil = Number(lava ? me.lavaCooldownUntilMs : me.lockoutUntilMs) || assist.lavaUntil;
+                if (now - (assist.sitSince || assist.started) > ASSIST_LAVA_MAX_MS) { assistStop(lava ? 'LAVA TOO LONG' : 'KING SAFE TOO LONG'); return; }
             } else {
                 if (!assist.clearStart) assist.clearStart = now;
                 const bidding = reasons.includes('currently_bidding');
@@ -9290,7 +9297,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         // Not during a lava cooldown (6.20): it runs down with the clock alone, and its three
         // minutes are tiles worth playing, as the MarbleMind bot does it. The one !unbid comes
         // once the cooldown is over.
-        if (assist.active && assist.phase !== 'lava') return abSet('hold', 'Paused while "Attack when free" is running.');
+        if (assist.active && assist.phase !== 'lava' && assist.phase !== 'lockout') return abSet('hold', 'Paused while "Attack when free" is running.');
         if (!holdsTabLock(now)) return abSet('hold', 'Another tab is bidding for you, this one stands by.');
         if (!tapInstalled) return abSet('alert', 'The lanes cannot be read in this browser, so nothing is bid.');
         if (!lanes.size) {
@@ -11741,12 +11748,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.42';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.43';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.43', date: '2026-10-01', items: [
+            'Attack when free: the 3 minutes in which a freshly crowned King cannot be attacked are now sat out like a lava cooldown - your autobid keeps playing, nothing is unbid, and the button counts down "NEW KING SAFE 2:14". Before, bidding stopped for those 3 minutes.',
+        ] },
         { v: '6.42', date: '2026-10-01', items: [
             'King tile: the King\'s VIP tier (for example "Ruby Initiate") now sits under the title line, in the colour the game gives that tier. Switch it in Settings \u203a King tile \u203a VIP tier.',
         ] },
