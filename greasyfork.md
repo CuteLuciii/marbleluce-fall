@@ -20,6 +20,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 - **On the throne** — opt-in: when you take the crown, the beverages you picked are poured by themselves, once per reign (spends gold or diamonds for good).
 - **Tomato notice** — a tomato thrown at you shows as one small line with the thrower's name instead of a picture, and an x dismisses it.
 - **Mentions** — chat messages with your name or one of your nicknames in them get a gold frame; @ + Tab completes a name, like on Twitch.
+- **Twitch emotes** (opt-in) — words like Kappa, LUL or PogChamp show as the emote, as in a Twitch chat: Twitch's global emotes, exact spelling, whole words. Only you see them.
 - **Tomato button** — beside Send: tick one, several or all of the players you can throw at, and throw. Each throw is the game's own !tomato line, and the answers come back as one line you can dismiss.
 - **Animal call button** — a paw beside the tomato lists every animal call; one click sends it. A gathering running in the chat is marked, with how many joined and roughly how long it lasts. It also shows when the next gathering can start and which animals are still resting.
 - **Enhanced chat** — hide system lines you don't need, text sizes, grouped messages, pop the chat out into a window, a compact cosmetics switch.
@@ -37,7 +38,7 @@ A layout overhaul for **[Marble Crownfall](https://marblecrownfall.com)**. It ma
 ## Good to know
 
 - Purchases always go through the game's own buttons — the script never buys anything by itself.
-- Everything it shows comes from the page or the game's own endpoints, with two exceptions: the update notice asks Greasy Fork for this script's current version (every two minutes while the tab is visible, falling back to the GitHub repo), and the euro prices fetch today's USD→EUR rate from frankfurter.dev (European Central Bank rates) once a day. Neither sends anything but the request itself; switch off the euro prices and only the update check remains.
+- Everything it shows comes from the page or the game's own endpoints, with these exceptions: the update notice asks Greasy Fork for this script's current version (every two minutes while the tab is visible, falling back to the GitHub repo), and the euro prices fetch today's USD→EUR rate from frankfurter.dev (European Central Bank rates) once a day. Switch on Twitch emotes and the list of emote names comes from emotes.adamcy.pl once a day, the pictures from Twitch's image server (static-cdn.jtvnw.net). None of them sends anything but the request itself; switch off the euro prices and leave the emotes off, and only the update check remains.
 - Every picture in the themes is drawn by the script itself — no logos, stills or fonts of the originals.
 
 The source lives on [GitHub](https://github.com/CuteLuciii/marbleluce-fall); updates arrive here automatically.

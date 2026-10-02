@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.44
+// @version      6.45
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -333,6 +333,8 @@
             { key: 'chatMentions', label: 'Highlight messages that mention you',
               hint: 'A message with your name in it (with or without @) gets a gold frame, so it stands out while the chat runs on. Your own messages are left out. Nicknames: other words that mean you, separated by commas.',
               sub: { key: 'chatMentionNames', type: 'text', label: 'Nicknames', def: '', placeholder: 'e.g. lucie, luce', run: () => mentionRefresh() } },
+            { key: 'chatEmotes', def: false, label: 'Twitch emotes',
+              hint: 'Opt-in. Words like Kappa, LUL or PogChamp show as the emote, as in a Twitch chat: Twitch\'s global emotes, exact spelling, whole words. Only you see them; everyone else reads the word. The pictures come from Twitch, the list of names from emotes.adamcy.pl, once a day.' },
             { key: 'chatTabComplete', label: 'Complete names with @ and Tab',
               hint: 'Type @ and the start of a name, then Tab: the name is filled in, Tab again for the next match (Shift+Tab goes back). The @ is left out of the message. Names come from the chat and from the players in the game.' },
             { key: 'chatStick', label: 'Stay at the newest message',
@@ -1737,6 +1739,11 @@
             outline: 1px solid rgba(242, 193, 78, 0.75) !important; outline-offset: -1px;
             box-shadow: inset 4px 0 0 #f2c14e, inset 0 0 0 999px rgba(242, 193, 78, 0.08) !important;
             border-radius: 6px; padding: 4px 8px 5px 11px !important;
+        }
+        /* Twitch emotes (6.45, section 9l): line height of the text, like in a Twitch chat. */
+        .mcf-chat__text img.mcfo-emote {
+            display: inline-block; height: 1.75em; width: auto; max-width: 5.5em;
+            vertical-align: middle; margin: -0.3em 0.05em; object-fit: contain;
         }
         /* The game frames a command result in a box of its own; the notice is the box. */
         .mcf-chat__message[data-mcfo-tomato] { padding: 0 !important; border: 0 !important; background: none !important; box-shadow: none !important; }
@@ -10553,7 +10560,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         watchChatList();
         // A pass over all lines only when something that decides them changed; new lines bring
         // their own pass through the observer.
-        const sig = [on, settings.chatGroup, ...CHAT_FILTERS.map(f => settings[f.key])].join();
+        const sig = [on, settings.chatGroup, settings.chatEmotes, ...CHAT_FILTERS.map(f => settings[f.key])].join();
         if (sig !== chatPlusSig) { chatPlusSig = sig; planChatPass(); }
     }
 
@@ -10674,6 +10681,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         const list = document.querySelector(CHAT_LIST_SEL);
         if (list) tomatoPass(list);
         if (list) mentionPass(list);
+        if (list) emotePass(list);
         if (chatSlimPresent()) return;   // the old script owns these attributes while it runs
         if (!list) return;
         const on = chatPlusActive();
@@ -10801,6 +10809,130 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         mentionFor = '\u0000';
         const list = document.querySelector(CHAT_LIST_SEL);
         if (list) mentionPass(list);
+    }
+
+    // =========================================================================================
+    // 9l. TWITCH EMOTES (6.45)
+    // =========================================================================================
+    // Opt-in (Settings › Chat › Twitch emotes). A word that is the exact name of one of Twitch's
+    // global emotes (Kappa, LUL, PogChamp, ...) is drawn as the emote picture, the way Twitch's own
+    // chat does it: case-sensitive, whole words only. Only words made of letters and digits count,
+    // so the old text smileys of the global set (":)", "<3", ":p") stay text.
+    //
+    // The pictures come straight from Twitch's public image server (static-cdn.jtvnw.net, no login).
+    // Twitch's own list of names needs a token that has no place in a public script, so the list
+    // comes from emotes.adamcy.pl (no key, allows the call from this page), cached for a day. If it
+    // cannot be reached, a short built-in list of the common ones stands in.
+    //
+    // Only the text nodes inside .mcf-chat__text change; the game builds a new node whenever a row
+    // changes (reconcileChatMessageRows), so a re-drawn row simply comes back as text and is done
+    // again. alt and title carry the name: copying a message keeps the word, hovering shows it.
+    const EMOTE_LIST_URL = 'https://emotes.adamcy.pl/v1/global/emotes/twitch';
+    const EMOTE_CDN = id => `https://static-cdn.jtvnw.net/emoticons/v2/${id}/default/dark/`;
+    const EMOTE_TTL = 24 * 3600e3, EMOTE_RETRY = 30 * 60e3;
+    const EMOTE_FALLBACK = 'Kappa:25,LUL:425618,PogChamp:305954156,Kreygasm:41,4Head:354,ResidentSleeper:245,'
+        + 'NotLikeThis:58765,SeemsGood:64138,VoHiYo:81274,HeyGuys:30259,KappaPride:55338,CoolCat:58127,DansGame:33,'
+        + 'SMOrc:52,WutFace:28087,PJSalt:36,Jebaited:114836,BabyRage:22639,FailFish:360,MrDestructoid:28,cmonBruh:84608,'
+        + 'CoolStoryBob:123171,TriHard:120232,Keepo:1902,KomodoHype:81273,OhMyDog:81103,PunOko:160401,SwiftRage:34,'
+        + 'TheIlluminati:145315,BloodTrail:69,DoritosChip:102242,GivePLZ:112291,TakeNRG:112292,HSCheers:444572,'
+        + 'PopCorn:724216,CorgiDerp:49106,BOP:301428702,StinkyCheese:90076,GlitchCat:304486301,TwitchUnity:196892,'
+        + 'MingLee:68856,Kappu:160397,imGlitch:112290,TPFufun:508650,VirtualHug:301696583';
+    const emotes = { map: null, key: '', loading: false, failedAt: 0 };
+
+    function emoteSetList(pairs, src) {
+        const map = new Map();
+        for (const [code, id] of pairs) if (/^\w+$/.test(code) && /^[\w-]+$/.test(String(id))) map.set(code, String(id));
+        if (!map.size) return false;
+        emotes.map = map;
+        emotes.key = src + ':' + map.size;
+        return true;
+    }
+
+    function emoteLoad() {
+        if (emotes.loading) return;
+        let saved = null;
+        try { saved = JSON.parse(localStorage.getItem('mcfo_emotes') || 'null'); } catch (e) {}
+        if (!emotes.map && saved && Array.isArray(saved.list)) emoteSetList(saved.list, 'saved');
+        const fresh = saved && Date.now() - saved.at < EMOTE_TTL;
+        if (fresh || Date.now() - emotes.failedAt < EMOTE_RETRY) {
+            if (!emotes.map) emoteSetList(EMOTE_FALLBACK.split(',').map(x => x.split(':')), 'builtin');
+            return;
+        }
+        if (!emotes.map) emoteSetList(EMOTE_FALLBACK.split(',').map(x => x.split(':')), 'builtin');
+        emotes.loading = true;
+        fetch(EMOTE_LIST_URL, { credentials: 'omit', cache: 'no-store' })
+            .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(data => {
+                // [{ code, urls: [{ size, url: ".../emoticons/v2/<id>/default/light/1.0" }] }]
+                const list = [];
+                for (const e of Array.isArray(data) ? data : []) {
+                    const m = /\/emoticons\/v2\/([\w-]+)\//.exec((e && e.urls && e.urls[0] && e.urls[0].url) || '');
+                    if (e && typeof e.code === 'string' && m) list.push([e.code, m[1]]);
+                }
+                if (!emoteSetList(list, 'live')) throw new Error('empty list');
+                try { localStorage.setItem('mcfo_emotes', JSON.stringify({ at: Date.now(), list: [...emotes.map] })); } catch (e) {}
+                planChatPass();
+            })
+            .catch(err => { emotes.failedAt = Date.now(); console.warn('[MarbleLuceFall] emote list:', err.message || err); })
+            .then(() => { emotes.loading = false; });
+    }
+
+    function emoteImg(code, id) {
+        const img = document.createElement('img');
+        const base = EMOTE_CDN(id);
+        img.className = 'mcfo-emote';
+        img.src = base + '1.0';
+        img.srcset = `${base}1.0 1x, ${base}2.0 2x, ${base}3.0 4x`;
+        img.alt = code;
+        img.title = code;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        // A picture that does not load becomes the word again.
+        img.addEventListener('error', () => { if (img.parentNode) img.replaceWith(document.createTextNode(code)); }, { once: true });
+        return img;
+    }
+
+    function emoteText(textEl) {
+        const map = emotes.map;
+        const walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        while (walker.nextNode()) nodes.push(walker.currentNode);
+        for (const node of nodes) {
+            const parts = node.data.split(/(\s+)/);
+            if (!parts.some(p => map.has(p))) continue;
+            const frag = document.createDocumentFragment();
+            let run = '';
+            for (const p of parts) {
+                const id = map.get(p);
+                if (!id) { run += p; continue; }
+                if (run) { frag.appendChild(document.createTextNode(run)); run = ''; }
+                frag.appendChild(emoteImg(p, id));
+            }
+            if (run) frag.appendChild(document.createTextNode(run));
+            node.replaceWith(frag);
+        }
+    }
+
+    function emotePass(list) {
+        if (!settings.chatEmotes) {
+            // Switched off: every picture becomes its word again.
+            const done = list.querySelectorAll('[data-mcfo-emo]');
+            if (!done.length) return;
+            done.forEach(el => {
+                el.querySelectorAll('img.mcfo-emote').forEach(img => img.replaceWith(document.createTextNode(img.alt)));
+                el.normalize();
+                el.removeAttribute('data-mcfo-emo');
+            });
+            return;
+        }
+        if (!emotes.map || (!emotes.loading && emotes.key.startsWith('builtin'))) emoteLoad();
+        if (!emotes.map) return;
+        // Each text is done once per list; a fuller list arriving later goes over them again.
+        for (const el of list.querySelectorAll('article.mcf-chat__message .mcf-chat__text')) {
+            if (el.getAttribute('data-mcfo-emo') === emotes.key) continue;
+            el.setAttribute('data-mcfo-emo', emotes.key);
+            emoteText(el);
+        }
     }
 
     // --- @ + Tab completes a name (6.37) ---
@@ -11777,12 +11909,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.44';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.45';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.45', date: '2026-10-02', items: [
+            'Twitch emotes in the chat (opt-in, Settings › Chat › Twitch emotes): words like Kappa, LUL or PogChamp show as the emote, as in a Twitch chat - all of Twitch\'s global emotes, exact spelling, whole words. Only you see them; the message itself stays plain text, so everyone else reads the word.',
+        ] },
         { v: '6.44', date: '2026-10-01', items: [
             'Player gifts: a new window in the account menu that lists everyone playing this episode (and whoever wrote in the chat lately) with what you can still give them - one Gold Gift and one Diamond Gift per player, ever. A search box filters the list and also finds players who are not on it; "Only players I can still gift" hides everyone you are done with. Click a player for the amounts the game allows, click an amount twice to send. Players you already gifted, or whose lifetime cap is full, are remembered and not asked for again.',
         ] },
