@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.45
+// @version      6.46
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -11909,12 +11909,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.45';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.46';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.46', date: '2026-10-03', items: [
+            'Loadouts know Bidding Indicators (new in the game with v0.10.2): a loadout now saves your indicator with its random pool and puts it back on. In the inventory the Bidding Indicator Style page has the Loadout and Pool buttons like trails and borders. Older loadouts without an indicator leave yours as it is.',
+        ] },
         { v: '6.45', date: '2026-10-02', items: [
             'Twitch emotes in the chat (opt-in, Settings › Chat › Twitch emotes): words like Kappa, LUL or PogChamp show as the emote, as in a Twitch chat - all of Twitch\'s global emotes, exact spelling, whole words. Only you see them; the message itself stays plain text, so everyone else reads the word.',
         ] },
@@ -15020,6 +15023,10 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         blase:  loChat('King chat bubble', 'king_chat_bubble_style'),
         trail:  loMarble('Marble trail', '/api/inventory/marble-trails'),
         border: loMarble('Marble border', '/api/inventory/marble-borders'),
+        // Bidding indicators (game v0.10.2): same equipment shape as borders - the game even draws
+        // their inventory page with the border page's code (data-border-card-id, /selected,
+        // /random-pool, /random-enabled), so the border slot type fits as is.
+        indikator: loMarble('Bidding indicator', '/api/inventory/bidding-indicators'),
         titelChat:  loContext('Title in chat', '/api/inventory/royal-titles', 'royal_title_chat'),
         titelThron: loContext('Title on the throne', '/api/inventory/royal-titles', 'royal_title_throne'),
         titelFeier: loContext('Title in celebrations', '/api/inventory/royal-titles', 'royal_title_celebration'),
@@ -15216,10 +15223,12 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         king_chat_bubble_style: [['blase', 'Loadout']],
         marble_trails:          [['trail', 'Loadout'], ['trail', 'Pool', 'pool']],
         marble_borders:         [['border', 'Loadout'], ['border', 'Pool', 'pool']],
+        bidding_indicator_style: [['indikator', 'Loadout'], ['indikator', 'Pool', 'pool']],
         royal_title:            [['titelChat', 'Chat'], ['titelThron', 'Throne'], ['titelFeier', 'Celebration']],
         default_toll:           [['tollThron', 'Throne'], ['tollFeier', 'Celeb. start'], ['tollEnde', 'Celeb. end']],
     };
-    const LO_NONE = { marble_trails: ['trail', 'No trail'], marble_borders: ['border', 'No border'] };
+    const LO_NONE = { marble_trails: ['trail', 'No trail'], marble_borders: ['border', 'No border'],
+                      bidding_indicator_style: ['indikator', 'No indicator'] };
     const loDocs = new Set();
     let loUi = { mode: '', confirm: null, pick: '' };   // mode: '' | 'save' | 'import'
 
