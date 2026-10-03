@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.46
+// @version      6.47
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -119,14 +119,79 @@
     // the chat (/chat/ws). Reading a socket that is already open costs nothing: lane_state frames
     // arrive again and again, so there is nothing to catch up on.
     const tappedSockets = new WeakSet();
+    const ownListeners = new WeakSet();
     function tapSocket(ws) {
         try {
             if (!ws || tappedSockets.has(ws)) return;
             if (new URL(String(ws.url || ''), location.href).pathname !== '/ws') return;
             tappedSockets.add(ws);        // set first: our own addEventListener comes back through here
-            ws.addEventListener('message', e => readFrame(e.data));
+            const listener = e => readFrame(e.data);
+            ownListeners.add(listener);
+            ws.addEventListener('message', listener);
         } catch (e) { /* never let the tap break the socket */ }
     }
+
+    // --- Hide bidding indicators (Settings › Ticket rail, 6.47) ---
+    // Bidding indicators (game v0.10.2) are drawn by the lane renderer itself
+    // (biddingIndicators/runtimeScene.js via renderRailsStatic.js): they replace the plain grey
+    // bid banner, move the amount into their own shape and re-colour the banner. Hiding the
+    // decoration by CSS would leave a bare number floating where the banner was, so the switch
+    // works one step earlier: the per-player receipts (payload.biddingIndicatorAssignments) are
+    // taken out of the frames before the game reads them. Without a receipt the renderer draws
+    // the plain banner exactly as for a player who owns no indicator.
+    //
+    // The game keeps every receipt it once accepted for the rest of that run
+    // (biddingIndicators/assignmentStore.js, keyed by lane + run), so switching on takes hold
+    // with the next run on each lane, never in the middle of one. Receipts also arrive in the
+    // reply to one's own bid (bidPreviewLaneState of /bid/place), hence the fetch filter below.
+    // Read straight from storage here: the settings (section 1) only exist once the page is there.
+    let bidIndicatorsOff = false;
+    try { bidIndicatorsOff = !!(JSON.parse(localStorage.getItem('mcf_overhaul_settings')) || {}).hideBidIndicators; } catch (e) {}
+    const INDICATOR_KEY = '"biddingIndicatorAssignments"';
+    const dropIndicators = (k, v) => (k === 'biddingIndicatorAssignments' ? undefined : v);
+
+    // Wraps the game's own message listener. Frames without receipts - binary physics, event
+    // digests, and every frame while the switch is off - are handed over untouched.
+    function indicatorFilter(fn) {
+        return function (e) {
+            if (bidIndicatorsOff && typeof e.data === 'string' && e.data.indexOf(INDICATOR_KEY) !== -1) {
+                let ev = null;
+                try {
+                    const data = JSON.stringify(JSON.parse(e.data, dropIndicators));
+                    ev = new pageWindow.MessageEvent('message', { data, origin: e.origin, lastEventId: e.lastEventId });
+                } catch (err) { /* a frame we cannot read goes through as it came */ }
+                if (ev) return fn.call(this, ev);
+            }
+            return fn.call(this, e);
+        };
+    }
+
+    // Installed only once the switch is first turned on: until then this script leaves the
+    // page's fetch alone. Only the reply of /bid/place is ever looked at.
+    let bidFetchWrapped = false;
+    function wrapBidFetch() {
+        if (bidFetchWrapped) return;
+        bidFetchWrapped = true;
+        try {
+            const nativeFetch = pageWindow.fetch;
+            pageWindow.fetch = function (input, init) {
+                const pending = nativeFetch.apply(this, arguments);
+                let url = '';
+                try { url = typeof input === 'string' ? input : String((input && input.url) || ''); } catch (e) {}
+                if (!bidIndicatorsOff || url.indexOf('/bid/place') === -1) return pending;
+                return pending.then(res => res.clone().text().then(txt => {
+                    if (txt.indexOf(INDICATOR_KEY) === -1) return res;
+                    return new pageWindow.Response(JSON.stringify(JSON.parse(txt, dropIndicators)),
+                        { status: res.status, statusText: res.statusText, headers: res.headers });
+                }).catch(() => res));
+            };
+        } catch (e) { console.warn('[MarbleLuceFall] could not filter bid replies:', e.message); }
+    }
+    function setBidIndicatorsOff(on) {
+        bidIndicatorsOff = !!on;
+        if (bidIndicatorsOff) wrapBidFetch();
+    }
+    if (bidIndicatorsOff) wrapBidFetch();
 
     try {
         const NativeWebSocket = pageWindow.WebSocket;
@@ -151,7 +216,15 @@
         // the socket over. Both wrappers pass everything through untouched.
         const proto = NativeWebSocket.prototype;
         const nativeAdd = proto.addEventListener;
-        proto.addEventListener = function (...args) { tapSocket(this); return nativeAdd.apply(this, args); };
+        proto.addEventListener = function (...args) {
+            tapSocket(this);
+            // The game's message listener on the gameplay socket gets the indicator filter. A
+            // socket found late (see above) already has its listener - indicators then stay
+            // until the next reload.
+            if (args[0] === 'message' && typeof args[1] === 'function' && tappedSockets.has(this) && !ownListeners.has(args[1]))
+                args[1] = indicatorFilter(args[1]);
+            return nativeAdd.apply(this, args);
+        };
         const nativeSend = proto.send;
         proto.send = function (...args) { tapSocket(this); return nativeSend.apply(this, args); };
 
@@ -302,7 +375,7 @@
             { key: 'throneDrinks', def: false, redraw: true, label: 'Pour beverages',
               hint: 'Opt-in. The beverages picked below are poured as soon as the game unlocks them, 15 seconds into your reign, each through the game\'s own button. Its limits still apply: every beverage, size and currency once per reign, and only with enough gold or diamonds. Starts with your next reign, never in the middle of one.' },
         ]},
-        { title: 'Ticket rail', blurb: 'Rebellion, Unbid, folding and extra chips.', items: [
+        { title: 'Ticket rail', blurb: 'Rebellion, Unbid, folding, extra chips and bidding indicators.', items: [
             { key: 'railGroup', label: 'Rebellion button and folding',
               hint: 'Rebellion sits beside the chips, the bigger amounts fold away behind an arrow. While you are King it becomes Royal Celebration, beside the toll.' },
             { key: 'unbidButton', label: 'Unbid button',
@@ -314,6 +387,8 @@
             { key: 'extraChips', label: 'Extra ticket chips',
               hint: '10K up to 1B, unlocked like the built-in ones: at ten times the amount in tickets.' },
             { key: 'centreRail', label: 'Centre the rail on the board' },
+            { key: 'hideBidIndicators', def: false, label: 'Hide bidding indicators',
+              hint: 'Opt-in. The decorated bid banners (Bidding Indicator Style) are no longer drawn on the lanes, for every player including you: each bid shows in the game\'s plain grey banner with the amount. Only you see it this way. Takes hold with the next run on each lane.' },
         ]},
         { title: 'Chat', blurb: 'Slim rail, pop-out window, growing message box and the enhanced chat.', items: [
             { key: 'chatRail', label: 'Smooth collapse and slim rail',
@@ -786,7 +861,9 @@
 
     function saveSettings() {
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) {}
+        setBidIndicatorsOff(settings.hideBidIndicators);
     }
+    setBidIndicatorsOff(settings.hideBidIndicators);
 
     // =========================================================================================
     // 2. ANCHORS
@@ -11909,12 +11986,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.46';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.47';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.47', date: '2026-10-03', items: [
+            'Hide bidding indicators (opt-in, Settings › Ticket rail › Hide bidding indicators): the decorated bid banners on the lanes are no longer drawn, every bid shows in the game\'s plain grey banner with the amount. Only you see it this way; it takes hold with the next run on each lane.',
+        ] },
         { v: '6.46', date: '2026-10-03', items: [
             'Loadouts know Bidding Indicators (new in the game with v0.10.2): a loadout now saves your indicator with its random pool and puts it back on. In the inventory the Bidding Indicator Style page has the Loadout and Pool buttons like trails and borders. Older loadouts without an indicator leave yours as it is.',
         ] },
