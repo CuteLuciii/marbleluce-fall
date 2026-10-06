@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.52.4
+// @version      6.52.5
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1622,6 +1622,20 @@
         }
         html[data-mcfo-boardclear="1"] [data-role="main-region"] :is([data-role="lane-panel"], [data-role="king-pane"], [data-role="king-action-tray"]) {
             border-color: transparent !important;
+        }
+        /* Royal Celebration (6.52.5): the game outlines every lane panel in pink (royalCelebrationEffects.js,
+           [data-royal-celebration=active] [data-role=lane-panel] { box-shadow: var(--royal-lane-shadow) }).
+           With the boxes see-through, that outline stood around the empty room above and below the
+           tile. It moves to the tile itself, the lane-stage svg, in the game's own theme colours. */
+        html[data-mcfo-boardclear="1"] [data-royal-celebration="active"] [data-role="main-region"] [data-role="lane-panel"] {
+            box-shadow: none !important;
+        }
+        /* The game's line is an inset shadow - on the svg the tile's own ground covers it - so the line
+           is an outline (painted over the content), in the colour of the only theme so far
+           (royalCelebrationThemes.js, royal-classic: inset 0 0 0 1px #cb9bde); the glow stays a shadow. */
+        html[data-mcfo-boardclear="1"] [data-royal-celebration="active"] [data-role="main-region"] [data-role="lane-stage"] {
+            outline: 1px solid #cb9bde; outline-offset: -1px;
+            box-shadow: 0 0 14px #b681f32b;
         }
 
         /* === KING TRAY UNDER THE TILE (6.11) ===
@@ -12199,12 +12213,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.4';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.5';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.52.5', date: '2026-10-06', items: [
+            'Royal Celebration: the pink outline now sits right on the lane tiles. With see-through board frames it used to stand around the empty room above and below them.',
+        ] },
         { v: '6.52.4', date: '2026-10-06', items: [
             'Inventory: marble borders fill their picture now (6.52.2 still left a wide empty margin around them).',
         ] },
