@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.51
+// @version      6.51.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -206,27 +206,61 @@
     // the scale goes into that transform and the amount moves along, at its own size: the well is
     // at least 106 wide, scaled it still holds a 12 px amount. Body heights from BODIES
     // (components.js): compact 58, expanded 70. Works from the next frame, no new run needed.
+    //
+    // 6.51.1: on the lanes the game moves every amount to the end of the group each frame
+    // (renderRailsStatic.js, foregroundAmounts: the text stays above crossing decoration), so the
+    // amount is NOT the element after the indicator - in 6.51 the scale latched on to the player's
+    // name there and the amount stayed where it was. Now the indicator and its amount are tied once,
+    // when the game builds the indicator (it inserts the group right before the amount), with a
+    // fallback by height for indicators that were already there. Only bid amounts are ever moved.
+    // The scale also keeps to the banner's width (INGRESS_BID_BANNER_WIDTH_PX 72), measured once
+    // per drawing of the indicator: 6.51 matched only the height, and the indicator stayed wider.
     const IND_BODY_HEIGHT = { compact_body_v1: 58, expanded_body_v1: 70 };
-    const IND_TARGET_HEIGHT = 30;
+    const IND_TARGET_HEIGHT = 30, IND_TARGET_WIDTH = 72;
+    const indRightEdge = new WeakMap();   // first child of a drawing -> its right edge (local units)
     let indScaleInstalled = false;
+    const isBidText = el => el && el.tagName === 'text' && (el.getAttribute('data-ingress-marble-label') === 'bid'
+        || (!el.hasAttribute('data-ingress-marble-label') && !!el.__mcfoIndG));
+    function indScaleOf(g) {
+        let k = IND_TARGET_HEIGHT / (IND_BODY_HEIGHT[g.getAttribute('data-construction')] || 58);
+        const first = g.firstChild;
+        if (first) {
+            let right = indRightEdge.get(first);
+            if (right === undefined) {
+                try { const b = g.getBBox(); right = b.x + b.width; } catch (e) { right = 0; }
+                indRightEdge.set(first, right);
+            }
+            if (right > 0) k = Math.min(k, IND_TARGET_WIDTH / right);
+        }
+        return k;
+    }
+    function indGroupFor(label) {
+        if (label.__mcfoIndG && label.__mcfoIndG.parentNode === label.parentNode) return label.__mcfoIndG;
+        const y = Number(label.getAttribute('y')) - 2;
+        for (const g of label.parentNode ? label.parentNode.children : []) {
+            if (g.tagName === 'g' && g.__mcfoInd && Math.abs(g.__mcfoInd.y - y) < 1) { label.__mcfoIndG = g; return g; }
+        }
+        return null;
+    }
     function installIndicatorScale() {
         if (indScaleInstalled) return;
         indScaleInstalled = true;
         try {
             const proto = pageWindow.Element.prototype, nativeSet = proto.setAttribute;
             proto.setAttribute = function (name, value) {
-                if (name === 'transform' && cosHide.indicatorSmall && this.tagName === 'g') {
+                if (name === 'transform' && cosHide.indicatorSmall && this.tagName === 'g' && this.getAttribute('aria-hidden') === 'true') {
                     const m = /^translate\(([-\d.e]+) ([-\d.e]+)\) scale\((-?1) 1\)$/.exec(String(value));
-                    const label = this.nextSibling;
-                    if (m && label && label.tagName === 'text' && this.getAttribute('aria-hidden') === 'true') {
-                        const k = IND_TARGET_HEIGHT / (IND_BODY_HEIGHT[this.getAttribute('data-construction')] || 58);
-                        label.__mcfoIndAnchor = Number(m[1]); label.__mcfoIndK = k;
+                    if (m) {
+                        const next = this.nextSibling;
+                        if (next && next.tagName === 'text' && next.getAttribute('data-ingress-marble-label') !== 'name') next.__mcfoIndG = this;
+                        const k = indScaleOf(this);
+                        this.__mcfoInd = { anchor: Number(m[1]), y: Number(m[2]), k };
                         return nativeSet.call(this, name, 'translate(' + m[1] + ' ' + m[2] + ') scale(' + (Number(m[3]) * k) + ' ' + k + ')');
                     }
-                } else if (name === 'x' && cosHide.indicatorSmall && this.__mcfoIndK && this.tagName === 'text') {
-                    const g = this.previousSibling;
-                    if (g && g.getAttribute('data-renderer-branch') === 'component_construction' && g.getAttribute('display') !== 'none')
-                        value = this.__mcfoIndAnchor + (Number(value) - this.__mcfoIndAnchor) * this.__mcfoIndK;
+                } else if (name === 'x' && cosHide.indicatorSmall && isBidText(this)) {
+                    const g = indGroupFor(this);
+                    if (g && g.__mcfoInd && g.getAttribute('data-renderer-branch') === 'component_construction' && g.getAttribute('display') !== 'none')
+                        value = g.__mcfoInd.anchor + (Number(value) - g.__mcfoInd.anchor) * g.__mcfoInd.k;
                 }
                 return nativeSet.call(this, name, value);
             };
@@ -12159,12 +12193,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.51';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.51.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.51.1', date: '2026-10-06', items: [
+            'Bidding indicators in Standard size: the amount sits in the middle of the frame again (in 6.51 it stayed at the right edge on the lanes), and the indicator is now no wider than the plain bid banner either.',
+        ] },
         { v: '6.51', date: '2026-10-06', items: [
             'Bidding indicators in Standard size now keep their own look: they are only drawn smaller, to the height of the plain bid banner, with the amount at its normal size. In 6.50 they turned into a plain panel in their colours instead. Takes hold at once, no new run needed.',
             'Messages that mention you are highlighted in your theme\'s accent colour instead of the same gold for everyone. The game\'s own Crownfall theme keeps the gold.',
