@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.47
+// @version      6.48
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -11986,12 +11986,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.47';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.48';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.48', date: '2026-10-06', items: [
+            'Loadouts now include Wreaths and Rebellion Auras: on those inventory pages the cards get + Loadout and + Pool like trails and borders, and putting on a loadout equips them too. Loadout codes stay compatible with the MarbleMind bot.',
+        ] },
         { v: '6.47', date: '2026-10-03', items: [
             'Hide bidding indicators (opt-in, Settings › Ticket rail › Hide bidding indicators): the decorated bid banners on the lanes are no longer drawn, every bid shows in the game\'s plain grey banner with the amount. Only you see it this way; it takes hold with the next run on each lane.',
         ] },
@@ -15107,6 +15110,11 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         // their inventory page with the border page's code (data-border-card-id, /selected,
         // /random-pool, /random-enabled), so the border slot type fits as is.
         indikator: loMarble('Bidding indicator', '/api/inventory/bidding-indicators'),
+        // Wreaths (game v0.10.3) and rebellion auras (v0.10.4): the game draws both inventory pages
+        // with the same marble-style code (renderMarbleStyleInventory), so /selected, /random-pool
+        // and /random-enabled work the same way. Keys shared with the bot's /loadout.
+        kranz: loMarble('Wreath', '/api/inventory/wreaths'),
+        aura:  loMarble('Rebellion aura', '/api/inventory/rebellion-auras'),
         titelChat:  loContext('Title in chat', '/api/inventory/royal-titles', 'royal_title_chat'),
         titelThron: loContext('Title on the throne', '/api/inventory/royal-titles', 'royal_title_throne'),
         titelFeier: loContext('Title in celebrations', '/api/inventory/royal-titles', 'royal_title_celebration'),
@@ -15304,11 +15312,14 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         marble_trails:          [['trail', 'Loadout'], ['trail', 'Pool', 'pool']],
         marble_borders:         [['border', 'Loadout'], ['border', 'Pool', 'pool']],
         bidding_indicator_style: [['indikator', 'Loadout'], ['indikator', 'Pool', 'pool']],
+        rebellion_aura_style:   [['aura', 'Loadout'], ['aura', 'Pool', 'pool']],
+        wreaths:                [['kranz', 'Loadout'], ['kranz', 'Pool', 'pool']],
         royal_title:            [['titelChat', 'Chat'], ['titelThron', 'Throne'], ['titelFeier', 'Celebration']],
         default_toll:           [['tollThron', 'Throne'], ['tollFeier', 'Celeb. start'], ['tollEnde', 'Celeb. end']],
     };
     const LO_NONE = { marble_trails: ['trail', 'No trail'], marble_borders: ['border', 'No border'],
-                      bidding_indicator_style: ['indikator', 'No indicator'] };
+                      bidding_indicator_style: ['indikator', 'No indicator'],
+                      rebellion_aura_style: ['aura', 'Default aura'], wreaths: ['kranz', 'No wreath'] };
     const loDocs = new Set();
     let loUi = { mode: '', confirm: null, pick: '' };   // mode: '' | 'save' | 'import'
 
