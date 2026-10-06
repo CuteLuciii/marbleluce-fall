@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.49
+// @version      6.50
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -152,16 +152,23 @@
     // message on.
     const COS_GROUPS = { marbles: ['trail', 'border', 'aura', 'indicator'], chat: ['chatColour', 'chatBg', 'chatName', 'kingBubble'], king: ['crown', 'wreath'] };
     const COS_GROUP_KEYS = { marbles: 'hideCosMarbles', chat: 'hideCosChat', king: 'hideCosKing' };
-    const COS_KEYS = { trail: 'hideTrails', border: 'hideBorders', aura: 'hideAuras', indicator: 'hideBidIndicators',
+    const COS_KEYS = { trail: 'hideTrails', border: 'hideBorders', aura: 'hideAuras', indicator: 'bidIndicatorMode',
                        chatColour: 'hideChatColours', chatBg: 'hideChatBackgrounds', chatName: 'hideUsernameStyles', kingBubble: 'hideKingBubbles',
                        crown: 'hideCrown', wreath: 'hideWreath' };
     const COS_MARBLE_FIELDS = { biddingIndicatorAssignments: 'indicator', marbleTrailAssignments: 'trail',
                                 marbleBorderAssignments: 'border', rebellionAuraAssignments: 'aura' };
     const CHAT_COS_SCHEMA = 'mcf.chat-cosmetic-snapshot/v1';
+    // Bidding indicators have three states since 6.50 (bidIndicatorMode 0 show, 1 standard size,
+    // 2 hide); the 6.47-6.49 switch hideBidIndicators counts as Hide.
+    const bidMode = st => {
+        if (st.bidIndicatorMode === undefined) return st.hideBidIndicators ? 2 : 0;
+        const m = Number(st.bidIndicatorMode); return m === 1 || m === 2 ? m : 0;
+    };
     function cosCompute(st) {
         const out = {};
         for (const [g, parts] of Object.entries(COS_GROUPS))
-            for (const p of parts) out[p] = !!(st.hideCosAll || st[COS_GROUP_KEYS[g]] || st[COS_KEYS[p]]);
+            for (const p of parts) out[p] = !!(st.hideCosAll || st[COS_GROUP_KEYS[g]] || (p === 'indicator' ? bidMode(st) === 2 : st[COS_KEYS[p]]));
+        out.indicatorSmall = !out.indicator && bidMode(st) === 1;
         return out;
     }
     let cosHide = {};
@@ -171,6 +178,7 @@
     function cosConcerns(txt) {
         if (typeof txt !== 'string') return false;
         for (const [field, part] of Object.entries(COS_MARBLE_FIELDS)) if (cosHide[part] && txt.indexOf('"' + field + '"') !== -1) return true;
+        if (cosHide.indicatorSmall && txt.indexOf('"biddingIndicatorAssignments"') !== -1) return true;
         if (cosChatParts() && txt.indexOf(CHAT_COS_SCHEMA) !== -1) return true;
         return !!cosHide.wreath && txt.indexOf('"kingCosmetics"') !== -1;
     }
@@ -190,8 +198,25 @@
         }
         return o;
     }
+    // Standard size (6.50): a decorated indicator becomes the game's own plain capsule in the same
+    // colours - a plain_panel recipe of the same rarity with the panel palette. The game checks a
+    // receipt's recipe (validateBiddingIndicatorRecipe), not that it matches the fingerprint, and
+    // a palette valid for the item's panel is valid for the plain panel too (same colour roles).
+    // Checked against the game's own validateRecipe and drawn with its own renderer.
+    function indicatorStandard(a) {
+        const r = a && a.choice && a.choice.recipe;
+        if (!r || typeof r !== 'object' || r.family === 'plain_panel' || !r.panel || !r.panel.palette) return a;
+        const plain = { schema: r.schema, version: r.version, registry: r.registry, family: 'plain_panel', rarity: r.rarity,
+                        panel: { profile: 'native_capsule_v1', palette: r.panel.palette }, motion: { preset: 'still_v1' } };
+        return Object.assign({}, a, { choice: Object.assign({}, a.choice, { recipe: plain }) });
+    }
     function cosReviver(k, v) {
         const part = COS_MARBLE_FIELDS[k];
+        if (part === 'indicator' && cosHide.indicatorSmall && v && typeof v === 'object') {
+            const o = {};
+            for (const [id, a] of Object.entries(v)) o[id] = indicatorStandard(a);
+            return o;
+        }
         if (part) return cosHide[part] ? undefined : v;
         if (k === 'kingCosmetics' && cosHide.wreath && v && typeof v === 'object' && v.wreath) {
             const o = Object.assign({}, v); delete o.wreath; return o;
@@ -454,8 +479,9 @@
                 { key: 'hideTrails', def: false, label: 'Hide marble trails', hint: 'Marbles run without their trail.' },
                 { key: 'hideBorders', def: false, label: 'Hide marble borders', hint: 'No rings around the marbles.' },
                 { key: 'hideAuras', def: false, label: 'Hide rebellion auras', hint: 'A rebellion shows in the game\'s own default aura.' },
-                { key: 'hideBidIndicators', def: false, label: 'Hide bidding indicators',
-                  hint: 'Every bid shows in the game\'s plain grey banner with the amount.' },
+                { key: 'bidIndicatorMode', type: 'seg', def: 0, label: 'Bidding indicators',
+                  options: [[0, 'Show'], [1, 'Standard size'], [2, 'Hide']],
+                  hint: 'Standard size: every decorated indicator shrinks to the game\'s plain bid banner and keeps its colours. Hide: every bid in the plain grey banner.' },
             ]},
             { title: 'Chat', note: 'From the next message on. Hiding the whole group uses the game\'s own cosmetics button in the chat header and turns it back on when you switch this off.', items: [
                 { key: 'hideCosChat', def: false, redraw: true, group: true, label: 'Hide all chat cosmetics' },
@@ -540,6 +566,10 @@
             const def = item.def !== undefined ? item.def : true;   // switches are on unless said otherwise
             settingDefaults[item.key] = def;
             settings[item.key] = stored[item.key] !== undefined ? !!stored[item.key] : def;
+            if (item.type === 'seg') {
+                const v = Number(stored[item.key]);
+                settings[item.key] = item.options.some(o => o[0] === v) ? v : def;
+            }
             for (const sub of itemSubs(item)) {
                 if (sub.type === 'action') continue;   // a button, nothing to store
                 settingDefaults[sub.key] = sub.def;
@@ -936,6 +966,8 @@
     // 6.28: our own name field gave way to the game's. Whoever had hidden it keeps the name hidden.
     if (stored.kcName === undefined && (stored.kingName === false || (stored.kingName === undefined && stored.kingOverlay === false)))
         settings.kcName = false;
+    // 6.50: the switch Hide bidding indicators (6.47-6.49) became the choice Show / Standard size / Hide.
+    if (stored.bidIndicatorMode === undefined && stored.hideBidIndicators === true) settings.bidIndicatorMode = 2;
     if (stored.hideDailies === undefined && stored.tidyFooter === false) {
         for (const b of FOOTER_BUTTONS) settings[b.key] = false;
     }
@@ -2196,6 +2228,8 @@
            their headings. */
         .mcfo-set__section::after { content: ''; flex: 1; height: 1px; background: #1c2d3b; }
         .mcfo-set__sub-title { margin: 12px 2px 6px; font-size: 12px; font-weight: 700; color: #9ab0c0; }
+        .mcfo-set__item--seg .mcfo-seg { flex-shrink: 0; }
+        .mcfo-set__item--seg .mcfo-seg button:disabled { cursor: default; }
         .mcfo-set__subnote { margin: -2px 2px 6px; font-size: 11.5px; line-height: 1.35; color: #7f95a6; }
         /* Cosmetics page (6.49): the group switch heads its card. */
         .mcfo-set__item[data-group] + .mcfo-set__item { border-top: 2px solid #23394b; }
@@ -12104,12 +12138,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.49';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.50';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.50', date: '2026-10-06', items: [
+            'Bidding indicators can now be shrunk instead of hidden: Settings › Cosmetics › Marbles › Bidding indicators has three states, Show, Standard size and Hide. Standard size turns every decorated indicator into the game\'s normal bid banner in that player\'s colours, so the big ones no longer cover half the tile. Hide works as before; whoever had it on keeps it.',
+        ] },
         { v: '6.49', date: '2026-10-06', items: [
             'New settings page Cosmetics: hide every cosmetic with one switch, a whole group (Marbles, Chat, King) or one by one: marble trails, borders, rebellion auras, bidding indicators; chat font colours, backgrounds, username styles, King chat bubbles; the crown and the wreath on the King tile. Everything is then drawn the plain way, for every player including you, and only you see it so. Hiding all chat cosmetics uses the game\'s own cosmetics button in the chat header.',
             'Hide bidding indicators has moved from Settings › Ticket rail to Settings › Cosmetics. A switch you had on stays on.',
@@ -13549,6 +13586,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
 
     // One switch, with its sub-control if it has one.
     function settingItem(item) {
+        if (item.type === 'seg') return segItem(item);
         const wrap = document.createElement('div');
         wrap.className = 'mcfo-set__item';
 
@@ -13584,6 +13622,41 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             // So does a card of the page that hangs on it (redraw: true).
             if (settingsRedraw && (item.redraw || ALL_ITEMS.some(i => i.needs === item.key))) settingsRedraw();
         });
+        return wrap;
+    }
+
+    // A choice of a few fixed states as one segmented row (6.50, bidding indicators). A main or
+    // group switch that covers it shows its last option (Hide) pressed and greyed.
+    function segItem(item) {
+        const wrap = document.createElement('div');
+        wrap.className = 'mcfo-set__item mcfo-set__item--seg';
+        const row = document.createElement('div');
+        row.className = 'mcfo-set__row';
+        row.innerHTML = '<span class="mcfo-set__text"><span class="mcfo-set__label"></span><span class="mcfo-set__hint"></span></span>';
+        row.querySelector('.mcfo-set__label').textContent = item.label;
+        const hint = row.querySelector('.mcfo-set__hint');
+        if (item.hint) hint.textContent = item.hint; else hint.remove();
+        const seg = document.createElement('div');
+        seg.className = 'mcfo-seg';
+        const covered = cosCovered(item.key);
+        const current = covered ? item.options[item.options.length - 1][0] : settings[item.key];
+        for (const [value, label] of item.options) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = label;
+            b.disabled = covered;
+            b.setAttribute('aria-pressed', value === current ? 'true' : 'false');
+            b.addEventListener('click', () => {
+                if (settings[item.key] === value) return;
+                settings[item.key] = value;
+                saveSettings(); apply();
+                for (const x of seg.children) x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+            });
+            seg.appendChild(b);
+        }
+        row.appendChild(seg);
+        wrap.appendChild(row);
+        if (covered) wrap.setAttribute('data-off', '');
         return wrap;
     }
 
