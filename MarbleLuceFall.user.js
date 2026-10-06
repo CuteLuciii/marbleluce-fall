@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.52.3
+// @version      6.52.4
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -12199,12 +12199,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.3';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.4';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.52.4', date: '2026-10-06', items: [
+            'Inventory: marble borders fill their picture now (6.52.2 still left a wide empty margin around them).',
+        ] },
         { v: '6.52.3', date: '2026-10-06', items: [
             'Inventory: trail previews are shown as the game draws them again (6.52.2 made them a little smaller).',
         ] },
@@ -15821,21 +15824,9 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             if (svg.hasAttribute('data-mcfo-fit') || svg.parentElement.closest('svg')) continue;
             const vb = svg.viewBox && svg.viewBox.baseVal;
             if (!vb || !vb.width) continue;
-            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-            for (const el of svg.children) {
-                if (el.tagName === 'rect' && +el.getAttribute('width') >= vb.width * 0.9) continue;   // the background
-                let b;
-                try { b = el.getBBox(); } catch (e) { continue; }
-                if (!b.width || !b.height) continue;
-                // getBBox leaves out the element's own transform - the marble is placed that way
-                const m = el.transform && el.transform.baseVal && el.transform.baseVal.consolidate();
-                for (const [px, py] of [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]]) {
-                    const x = m ? m.matrix.a * px + m.matrix.c * py + m.matrix.e : px;
-                    const y = m ? m.matrix.b * px + m.matrix.d * py + m.matrix.f : py;
-                    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-                }
-            }
-            if (!(x1 > x0)) { open++; continue; }   // not drawn yet
+            const box = invSvgBox(svg, vb);
+            if (!box) { open++; continue; }   // not drawn yet
+            const [x0, y0, x1, y1] = box;
             // Trails come as one rendered picture over the whole scene (<g><image>): where the
             // stroke really is cannot be measured - that preview stays as the game draws it.
             if (svg.querySelector(':scope > g > image')) { svg.setAttribute('data-mcfo-fit', 'skip'); continue; }
@@ -15845,6 +15836,57 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             svg.setAttribute('data-mcfo-fit', '1');
         }
         return open;
+    }
+    // The box around what is really visible, in the svg's own units: measured shape by shape with
+    // the real screen matrix (so the transforms that place the marble count); under a clip or
+    // mask only the clip's outline counts. getBBox alone made every border look a third smaller
+    // than it could be.
+    function invSvgBox(svg, vb) {
+        const toSvg = svg.getScreenCTM() && svg.getScreenCTM().inverse();
+        if (!toSvg) return null;
+        const doc = svg.ownerDocument, win = doc.defaultView;
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        const put = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+        // shape = the geometry, space = whose user space it is drawn in (a clip path's shapes are
+        // in the clipped element's space). Shapes are followed along their outline: the box of a
+        // rotated ring is ~40 % bigger than the ring (borders are drawn turned by 35 degrees).
+        const addShape = (shape, space) => {
+            const m = space.getScreenCTM && space.getScreenCTM();
+            if (!m) return;
+            const k = toSvg.multiply(m);
+            const at = (px, py) => put(k.a * px + k.c * py + k.e, k.b * px + k.d * py + k.f);
+            let len = 0;
+            try { len = typeof shape.getTotalLength === 'function' ? shape.getTotalLength() : 0; } catch (e) { len = 0; }
+            if (len > 0) {
+                const n = Math.min(64, Math.max(12, Math.ceil(len / 4)));
+                for (let i = 0; i <= n; i++) { const p = shape.getPointAtLength(len * i / n); at(p.x, p.y); }
+                return;
+            }
+            let bb; try { bb = shape.getBBox(); } catch (e) { return; }
+            if (!bb.width || !bb.height) return;
+            at(bb.x, bb.y); at(bb.x + bb.width, bb.y); at(bb.x, bb.y + bb.height); at(bb.x + bb.width, bb.y + bb.height);
+        };
+        const ref = (el, attr) => {
+            const m = /url\(["']?#([^"')]+)/.exec(el.getAttribute(attr) || '');
+            return m && doc.getElementById(m[1]);
+        };
+        const SKIP = new Set(['defs', 'mask', 'clippath', 'lineargradient', 'radialgradient', 'filter', 'pattern', 'title', 'desc', 'style']);
+        const walk = el => {
+            const tag = el.tagName.toLowerCase();
+            if (SKIP.has(tag)) return;
+            const cs = win.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) return;
+            // under a clip or mask only its own outline can show
+            const cut = ref(el, 'clip-path') || ref(el, 'mask');
+            if (cut && cut.children.length) { for (const c of cut.querySelectorAll('*')) if (!c.children.length) addShape(c, el); return; }
+            if (!el.children.length || tag === 'text') { addShape(el, el); return; }
+            for (const c of el.children) walk(c);
+        };
+        for (const el of svg.children) {
+            if (el.tagName.toLowerCase() === 'rect' && +el.getAttribute('width') >= vb.width * 0.9) continue;   // the background
+            walk(el);
+        }
+        return x1 > x0 ? [x0, y0, x1, y1] : null;
     }
     const invFitLater = new WeakMap();
     function invFitSoon(root) {
