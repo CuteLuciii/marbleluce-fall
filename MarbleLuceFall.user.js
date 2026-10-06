@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.52.2
+// @version      6.52.3
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -12199,12 +12199,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.3';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.52.3', date: '2026-10-06', items: [
+            'Inventory: trail previews are shown as the game draws them again (6.52.2 made them a little smaller).',
+        ] },
         { v: '6.52.2', date: '2026-10-06', items: [
             'Inventory cards: crowns sit in the middle of their picture again instead of being cut off at the bottom.',
             'Inventory cards show picture, name and buttons only. The description (colours, materials, construction ...) is on the big panel when you click an item.',
@@ -15787,7 +15790,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
            then gets the item's shape. */
         .inventoryBordersPage .inventorySelectionPanel .inventoryCardPreview { aspect-ratio: 1 / 1; }
         .inventoryBiddingIndicatorsPage .inventorySelectionPanel .inventoryCardPreview { aspect-ratio: 2.6 / 1; }
-        .inventorySelectionPanel .inventoryCardPreview svg[data-mcfo-fit] { width: 100% !important; height: 100% !important; aspect-ratio: auto !important; }
+        .inventorySelectionPanel .inventoryCardPreview svg[data-mcfo-fit="1"] { width: 100% !important; height: 100% !important; aspect-ratio: auto !important; }
         .inventorySelectionPanel .inventoryCardPreview [data-border-card] { height: 100%; }
         .inventorySelectionPanel .inventoryCard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 7px; }
         .inventorySelectionPanel .inventoryCard > .inventoryCardPreview { flex: none; }
@@ -15833,6 +15836,9 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 }
             }
             if (!(x1 > x0)) { open++; continue; }   // not drawn yet
+            // Trails come as one rendered picture over the whole scene (<g><image>): where the
+            // stroke really is cannot be measured - that preview stays as the game draws it.
+            if (svg.querySelector(':scope > g > image')) { svg.setAttribute('data-mcfo-fit', 'skip'); continue; }
             const pad = Math.max(x1 - x0, y1 - y0) * 0.1;
             svg.setAttribute('viewBox', `${x0 - pad} ${y0 - pad} ${x1 - x0 + 2 * pad} ${y1 - y0 + 2 * pad}`);
             svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
