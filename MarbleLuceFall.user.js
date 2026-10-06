@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.52.0
+// @version      6.52.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -12199,12 +12199,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.52.1', date: '2026-10-06', items: [
+            'Inventory: the page really uses the whole window now, left-aligned (in 6.52 the game still kept it narrow and centred in the live game), so more items fit in a row.',
+        ] },
         { v: '6.52', date: '2026-10-06', items: [
             'Inventory: the item list keeps its place. Looking at an item or equipping it no longer throws you back to the top of the list.',
             'Inventory: the page uses the whole window and the items sit in a grid of small cards, five to seven per row instead of one or two big ones. Badges sit on the picture, the buttons are short (+ Pool, \u2212 Pool); the full text is in the tooltip.',
@@ -15756,7 +15759,8 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     // seven per row. Badges sit on the preview, the button texts get a short form (full text stays
     // as the tooltip), so a card is picture, name and two buttons.
     const INV_GRID_CSS = `
-        .inventoryMain { width: 100%; max-width: none; padding: 14px 18px; }
+        /* the game's siteNavigation.css caps it with main.mcfPageContent (max-width + margin auto) */
+        main#inventory-root.inventoryMain { width: 100%; max-width: none; margin-inline: 0; padding: 14px 18px; }
         .inventorySelectionPanel > .inventoryCards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
         .inventoryBiddingIndicatorsPage .inventorySelectionPanel > .inventoryCards { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
         .inventoryRebellionAurasPage .inventorySelectionPanel > .inventoryCards { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
