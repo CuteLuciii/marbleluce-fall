@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.51.2
+// @version      6.52.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -12199,12 +12199,16 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.51.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.52.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.52', date: '2026-10-06', items: [
+            'Inventory: the item list keeps its place. Looking at an item or equipping it no longer throws you back to the top of the list.',
+            'Inventory: the page uses the whole window and the items sit in a grid of small cards, five to seven per row instead of one or two big ones. Badges sit on the picture, the buttons are short (+ Pool, \u2212 Pool); the full text is in the tooltip.',
+        ] },
         { v: '6.51.2', date: '2026-10-06', items: [
             'Bidding indicators in Standard size are now exactly as big as the plain bid banners, in width and in height (6.51.1 matched the width and left them lower).',
         ] },
@@ -15722,19 +15726,106 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         doc.documentElement.setAttribute('data-mcfo-invassist', '1');
         const st = doc.createElement('style');
         st.id = 'mcfo-inv-assist';
-        st.textContent = LO_CSS;
+        st.textContent = LO_CSS + INV_GRID_CSS;
         (doc.head || doc.documentElement).appendChild(st);
         loDocs.add(doc);
+        const keepScroll = invKeepScroll(doc, root);
         let queued = false;
         new MutationObserver(() => {
+            // Right away, not in the 60 ms batch below: the game has just thrown the old list away,
+            // and a frame at the top (or with the long button texts) is exactly the jump we hide.
+            // The loadout buttons first: they make the cards taller, and the old place may only
+            // exist with them (without, the browser clamps it).
+            invShortLabels(root);
+            loDecorate(doc);
+            keepScroll();
             if (queued) return;
             queued = true;
             // The bar too: its No trail / No border button depends on the page shown.
             setTimeout(() => { queued = false; loDrawBar(doc); loDecorate(doc); invTitleCount(doc); }, 60);
         }).observe(root, { childList: true, subtree: true });
         invTitleCount(doc);
+        invShortLabels(root);
         loKnowPlayer().catch(() => {}).then(() => loRedraw());
         loRedraw();
+    }
+
+    // The card grid (6.52). The game caps the page at 1480 px and gives every card at least 230 px
+    // plus a 1.4:1 preview: in a wide window that is one or two huge cards per row, and 52 crowns
+    // to scroll through. Here the page takes the whole window and the cards get small - six or
+    // seven per row. Badges sit on the preview, the button texts get a short form (full text stays
+    // as the tooltip), so a card is picture, name and two buttons.
+    const INV_GRID_CSS = `
+        .inventoryMain { width: 100%; max-width: none; padding: 14px 18px; }
+        .inventorySelectionPanel > .inventoryCards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+        .inventoryBiddingIndicatorsPage .inventorySelectionPanel > .inventoryCards { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+        .inventoryRebellionAurasPage .inventorySelectionPanel > .inventoryCards { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+        .inventorySelectionPanel .inventoryCard { position: relative; gap: 6px; padding: 7px; align-content: start; }
+        .inventorySelectionPanel .inventoryCard h3 { margin: 0; font-size: 12.5px; line-height: 1.25; min-height: 2.5em;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .inventorySelectionPanel .inventoryCard .inventoryMeta { font-size: 11px; }
+        .inventorySelectionPanel .inventoryCard .inventoryBadges { position: absolute; top: 11px; left: 11px; right: 11px;
+            gap: 4px; z-index: 1; pointer-events: none; }
+        .inventorySelectionPanel .inventoryCard .inventoryBadge { font-size: 10.5px; padding: 1px 6px; background: rgba(8, 12, 18, 0.8); }
+        .inventorySelectionPanel .inventoryCard .inventoryBadge:not([data-tone]) { display: none; }
+        .inventorySelectionPanel .inventoryCardActions { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; }
+        .inventorySelectionPanel .inventoryCardActions .inventoryAction { min-height: 0; padding: 5px 4px; font-size: 12px; line-height: 1.2; }
+        .inventorySelectionPanel .inventoryCardActions .inventoryAction[data-mcfo-short] { font-size: 0; }
+        .inventorySelectionPanel .inventoryCardActions .inventoryAction[data-mcfo-short]::after { content: attr(data-mcfo-short); font-size: 12px; }
+        .inventorySelectionPanel .mcfo-lob { gap: 4px; margin-top: 0; }
+        .inventorySelectionPanel .mcfo-lob__pick { padding: 4px 3px; font-size: 11px; }
+    `;
+    const INV_SHORT = { 'add to pool': '+ Pool', 'remove from pool': '\u2212 Pool', 'not pool eligible': 'No pool' };
+    function invShortLabels(root) {
+        for (const b of root.querySelectorAll('.inventorySelectionPanel .inventoryCardActions .inventoryAction')) {
+            const text = b.textContent.trim();
+            const short = INV_SHORT[text.toLowerCase()] || '';
+            if ((b.getAttribute('data-mcfo-short') || '') === short) continue;
+            if (short) { b.setAttribute('data-mcfo-short', short); b.title = text; }
+            else { b.removeAttribute('data-mcfo-short'); b.removeAttribute('title'); }
+        }
+    }
+
+    // The list keeps its place (6.52). The game draws the whole inventory again on every click -
+    // looking at a card, equipping it (with a "Loading inventory" in between) - and the card list
+    // is a scroll box of its own: the new one starts at the top. We note where each scroller
+    // stood and put the fresh one back there. The key is the subpage plus the game's own pager
+    // ("2/3" on borders and trails), so a new page or another subpage still starts at the top;
+    // so does a click in the sidebar. Narrow windows (below 821 px) scroll the document instead,
+    // which the loading step collapses - that one is put back too.
+    const INV_SCROLLERS = ['.inventorySelectionPanel > .inventoryCards', '.inventorySidebar'];
+    function invKeepScroll(doc, root) {
+        const keep = new Map();
+        const pager = () => { const p = root.querySelector('.inventorySelectionPanel > .inventoryActions span'); return p ? p.textContent.trim() : ''; };
+        const key = i => i === 1 ? 'sidebar' : loPage(doc) + '|' + pager();
+        const loading = () => !!root.querySelector('.inventoryStatus');
+        let docWas = false;
+        doc.addEventListener('scroll', e => {
+            if (loading()) return;   // the collapse of the loading step is no place to remember
+            const t = e.target;
+            if (t === doc) { keep.set('doc', (doc.scrollingElement || doc.documentElement).scrollTop); return; }
+            const i = t.matches ? INV_SCROLLERS.findIndex(sel => t.matches(sel)) : -1;
+            if (i >= 0) keep.set(key(i), t.scrollTop);
+        }, true);
+        doc.addEventListener('click', e => {
+            const nav = e.target.closest && e.target.closest('.inventorySidebar [data-page]');
+            if (nav) for (const k of [...keep.keys()]) if (k !== 'sidebar') keep.delete(k);
+        }, true);
+        return () => {
+            if (loading()) { docWas = true; return; }
+            INV_SCROLLERS.forEach((sel, i) => {
+                const el = root.querySelector(sel);
+                if (!el || el.__mcfoKept) return;
+                el.__mcfoKept = true;
+                const v = keep.get(key(i));
+                if (v && !el.scrollTop) el.scrollTop = v;
+            });
+            if (docWas) {
+                docWas = false;
+                const se = doc.scrollingElement || doc.documentElement, v = keep.get('doc');
+                if (v && se.scrollTop < v) se.scrollTop = v;
+            }
+        };
     }
 
     // "Your Royal Titles (12)" (6.38.4): the game lists every title as a card and never says how
