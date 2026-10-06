@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.50
+// @version      6.51
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -178,7 +178,6 @@
     function cosConcerns(txt) {
         if (typeof txt !== 'string') return false;
         for (const [field, part] of Object.entries(COS_MARBLE_FIELDS)) if (cosHide[part] && txt.indexOf('"' + field + '"') !== -1) return true;
-        if (cosHide.indicatorSmall && txt.indexOf('"biddingIndicatorAssignments"') !== -1) return true;
         if (cosChatParts() && txt.indexOf(CHAT_COS_SCHEMA) !== -1) return true;
         return !!cosHide.wreath && txt.indexOf('"kingCosmetics"') !== -1;
     }
@@ -198,25 +197,44 @@
         }
         return o;
     }
-    // Standard size (6.50): a decorated indicator becomes the game's own plain capsule in the same
-    // colours - a plain_panel recipe of the same rarity with the panel palette. The game checks a
-    // receipt's recipe (validateBiddingIndicatorRecipe), not that it matches the fingerprint, and
-    // a palette valid for the item's panel is valid for the plain panel too (same colour roles).
-    // Checked against the game's own validateRecipe and drawn with its own renderer.
-    function indicatorStandard(a) {
-        const r = a && a.choice && a.choice.recipe;
-        if (!r || typeof r !== 'object' || r.family === 'plain_panel' || !r.panel || !r.panel.palette) return a;
-        const plain = { schema: r.schema, version: r.version, registry: r.registry, family: 'plain_panel', rarity: r.rarity,
-                        panel: { profile: 'native_capsule_v1', palette: r.panel.palette }, motion: { preset: 'still_v1' } };
-        return Object.assign({}, a, { choice: Object.assign({}, a.choice, { recipe: plain }) });
+    // Standard size (6.51): the indicator keeps its own look and is only drawn smaller, to the
+    // height of the game's plain bid banner (INGRESS_BID_BANNER_HEIGHT_PX 30). 6.50 turned it into a
+    // plain panel instead - same size, but the look was gone. The game draws a decorated indicator
+    // as one SVG group (biddingIndicators/renderer.js renderStudy) and sets its place every frame as
+    // transform="translate(anchor y) scale(±1 1)", anchored at the marble's edge; the amount is a
+    // separate text right after it, centred in the frame's well at anchor ± (wellX + well/2). So
+    // the scale goes into that transform and the amount moves along, at its own size: the well is
+    // at least 106 wide, scaled it still holds a 12 px amount. Body heights from BODIES
+    // (components.js): compact 58, expanded 70. Works from the next frame, no new run needed.
+    const IND_BODY_HEIGHT = { compact_body_v1: 58, expanded_body_v1: 70 };
+    const IND_TARGET_HEIGHT = 30;
+    let indScaleInstalled = false;
+    function installIndicatorScale() {
+        if (indScaleInstalled) return;
+        indScaleInstalled = true;
+        try {
+            const proto = pageWindow.Element.prototype, nativeSet = proto.setAttribute;
+            proto.setAttribute = function (name, value) {
+                if (name === 'transform' && cosHide.indicatorSmall && this.tagName === 'g') {
+                    const m = /^translate\(([-\d.e]+) ([-\d.e]+)\) scale\((-?1) 1\)$/.exec(String(value));
+                    const label = this.nextSibling;
+                    if (m && label && label.tagName === 'text' && this.getAttribute('aria-hidden') === 'true') {
+                        const k = IND_TARGET_HEIGHT / (IND_BODY_HEIGHT[this.getAttribute('data-construction')] || 58);
+                        label.__mcfoIndAnchor = Number(m[1]); label.__mcfoIndK = k;
+                        return nativeSet.call(this, name, 'translate(' + m[1] + ' ' + m[2] + ') scale(' + (Number(m[3]) * k) + ' ' + k + ')');
+                    }
+                } else if (name === 'x' && cosHide.indicatorSmall && this.__mcfoIndK && this.tagName === 'text') {
+                    const g = this.previousSibling;
+                    if (g && g.getAttribute('data-renderer-branch') === 'component_construction' && g.getAttribute('display') !== 'none')
+                        value = this.__mcfoIndAnchor + (Number(value) - this.__mcfoIndAnchor) * this.__mcfoIndK;
+                }
+                return nativeSet.call(this, name, value);
+            };
+        } catch (e) { console.warn('[MarbleLuceFall] could not size bidding indicators:', e.message); }
     }
+    if (cosHide.indicatorSmall) installIndicatorScale();
     function cosReviver(k, v) {
         const part = COS_MARBLE_FIELDS[k];
-        if (part === 'indicator' && cosHide.indicatorSmall && v && typeof v === 'object') {
-            const o = {};
-            for (const [id, a] of Object.entries(v)) o[id] = indicatorStandard(a);
-            return o;
-        }
         if (part) return cosHide[part] ? undefined : v;
         if (k === 'kingCosmetics' && cosHide.wreath && v && typeof v === 'object' && v.wreath) {
             const o = Object.assign({}, v); delete o.wreath; return o;
@@ -481,7 +499,7 @@
                 { key: 'hideAuras', def: false, label: 'Hide rebellion auras', hint: 'A rebellion shows in the game\'s own default aura.' },
                 { key: 'bidIndicatorMode', type: 'seg', def: 0, label: 'Bidding indicators',
                   options: [[0, 'Show'], [1, 'Standard size'], [2, 'Hide']],
-                  hint: 'Standard size: every decorated indicator shrinks to the game\'s plain bid banner and keeps its colours. Hide: every bid in the plain grey banner.' },
+                  hint: 'Standard size: every decorated indicator keeps its look and is drawn as small as the game\'s plain bid banner; the amount keeps its size. Hide: every bid in the plain grey banner.' },
             ]},
             { title: 'Chat', note: 'From the next message on. Hiding the whole group uses the game\'s own cosmetics button in the chat header and turns it back on when you switch this off.', items: [
                 { key: 'hideCosChat', def: false, redraw: true, group: true, label: 'Hide all chat cosmetics' },
@@ -1005,6 +1023,7 @@
     function setCosmeticsHidden() {
         cosHide = cosCompute(settings);
         if (Object.values(cosHide).some(Boolean)) wrapCosFetch();
+        if (cosHide.indicatorSmall) installIndicatorScale();
         document.documentElement.setAttribute('data-mcfo-cos', Object.keys(cosHide).filter(p => cosHide[p]).join(' '));
         cosChatNative();
     }
@@ -3307,6 +3326,8 @@
             `${S}[data-mcfo-chatcos="1"] .mcf-chat__cosmetics-toggle[aria-pressed="true"]::before { background-color: ${track}; }`,
             `${S} .mcfo-tsbanner__name { color: ${c(0.84, 0.15)}; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.4), 0 0 26px ${c(0.55, 0.16)}, 0 4px 22px rgba(0, 0, 0, 0.75); }`,
             `${S} .mcfo-tsbanner__kicker { color: ${c(0.9, 0.06)}; }`,
+            // Mentions of you (6.36) in the theme's accent instead of the fixed gold (6.51).
+            `${S} .mcf-chat__message[data-mcfo-mention] { outline-color: ${c(0.74, 0.14).replace('rgb(', 'rgba(').replace(')', ', 0.75)')} !important; box-shadow: inset 4px 0 0 ${c(0.78, 0.15)}, inset 0 0 0 999px ${c(0.7, 0.14).replace('rgb(', 'rgba(').replace(')', ', 0.1)')} !important; }`,
             `${S} [data-role].mcfo-card.mcfo-card:hover { border-color: ${edge} !important; box-shadow: 0 0 0 1px ${edge}, 0 0 14px 2px ${c(0.6, 0.15).replace('rgb(', 'rgba(').replace(')', ', 0.55)')} !important; }`,
         ].join('\n');
     }
@@ -12138,12 +12159,16 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.50';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.51';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.51', date: '2026-10-06', items: [
+            'Bidding indicators in Standard size now keep their own look: they are only drawn smaller, to the height of the plain bid banner, with the amount at its normal size. In 6.50 they turned into a plain panel in their colours instead. Takes hold at once, no new run needed.',
+            'Messages that mention you are highlighted in your theme\'s accent colour instead of the same gold for everyone. The game\'s own Crownfall theme keeps the gold.',
+        ] },
         { v: '6.50', date: '2026-10-06', items: [
             'Bidding indicators can now be shrunk instead of hidden: Settings › Cosmetics › Marbles › Bidding indicators has three states, Show, Standard size and Hide. Standard size turns every decorated indicator into the game\'s normal bid banner in that player\'s colours, so the big ones no longer cover half the tile. Hide works as before; whoever had it on keeps it.',
         ] },
