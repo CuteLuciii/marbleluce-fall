@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.48
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, a music player with a movable bar, performance levels, how-to and what’s new.
+// @version      6.49
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -131,67 +131,116 @@
         } catch (e) { /* never let the tap break the socket */ }
     }
 
-    // --- Hide bidding indicators (Settings › Ticket rail, 6.47) ---
-    // Bidding indicators (game v0.10.2) are drawn by the lane renderer itself
-    // (biddingIndicators/runtimeScene.js via renderRailsStatic.js): they replace the plain grey
-    // bid banner, move the amount into their own shape and re-colour the banner. Hiding the
-    // decoration by CSS would leave a bare number floating where the banner was, so the switch
-    // works one step earlier: the per-player receipts (payload.biddingIndicatorAssignments) are
-    // taken out of the frames before the game reads them. Without a receipt the renderer draws
-    // the plain banner exactly as for a player who owns no indicator.
-    //
-    // The game keeps every receipt it once accepted for the rest of that run
-    // (biddingIndicators/assignmentStore.js, keyed by lane + run), so switching on takes hold
-    // with the next run on each lane, never in the middle of one. Receipts also arrive in the
-    // reply to one's own bid (bidPreviewLaneState of /bid/place), hence the fetch filter below.
+    // --- Hide cosmetics (Settings › Cosmetics, 6.49; bidding indicators alone since 6.47) ---
+    // Every cosmetic is taken out of the data before the game reads it, never painted over: the
+    // game then draws exactly what it draws for a player who owns none. Three sources:
+    //   marbles  the per-player receipts in the lane frames of the gameplay socket
+    //            (payload.marbleTrailAssignments / marbleBorderAssignments / rebellionAuraAssignments /
+    //            biddingIndicatorAssignments, read by the runtimeScene.js of each). Receipts also come
+    //            back in the reply to one's own bid (bidPreviewLaneState of /bid/place).
+    //   chat     the snapshot on every chat line (presentation.cosmetics, schema
+    //            mcf.chat-cosmetic-snapshot/v1, chat socket /chat/ws): text = font colour, panel =
+    //            background or King bubble (panel.sourceSlot), username = username style. Its
+    //            plainFallback carries the same colours and is neutralised with it. Checked against
+    //            the game's own resolveChatCosmeticRenderModel: each part comes out as the plain model.
+    //            Hiding ALL chat cosmetics uses the game's own button in the chat header instead (below).
+    //   king     snapshot.kingCosmetics.wreath (king socket /king/ws and /api/king/snapshot); the crown
+    //            is the 3D overlay layer and is hidden by CSS, as the Maximum performance level does.
     // Read straight from storage here: the settings (section 1) only exist once the page is there.
-    let bidIndicatorsOff = false;
-    try { bidIndicatorsOff = !!(JSON.parse(localStorage.getItem('mcf_overhaul_settings')) || {}).hideBidIndicators; } catch (e) {}
-    const INDICATOR_KEY = '"biddingIndicatorAssignments"';
-    const dropIndicators = (k, v) => (k === 'biddingIndicatorAssignments' ? undefined : v);
+    // The bidding-indicator store (biddingIndicators/assignmentStore.js) keeps what it accepted for
+    // the rest of a run, so marbles change with the next run on each lane; chat lines from the next
+    // message on.
+    const COS_GROUPS = { marbles: ['trail', 'border', 'aura', 'indicator'], chat: ['chatColour', 'chatBg', 'chatName', 'kingBubble'], king: ['crown', 'wreath'] };
+    const COS_GROUP_KEYS = { marbles: 'hideCosMarbles', chat: 'hideCosChat', king: 'hideCosKing' };
+    const COS_KEYS = { trail: 'hideTrails', border: 'hideBorders', aura: 'hideAuras', indicator: 'hideBidIndicators',
+                       chatColour: 'hideChatColours', chatBg: 'hideChatBackgrounds', chatName: 'hideUsernameStyles', kingBubble: 'hideKingBubbles',
+                       crown: 'hideCrown', wreath: 'hideWreath' };
+    const COS_MARBLE_FIELDS = { biddingIndicatorAssignments: 'indicator', marbleTrailAssignments: 'trail',
+                                marbleBorderAssignments: 'border', rebellionAuraAssignments: 'aura' };
+    const CHAT_COS_SCHEMA = 'mcf.chat-cosmetic-snapshot/v1';
+    function cosCompute(st) {
+        const out = {};
+        for (const [g, parts] of Object.entries(COS_GROUPS))
+            for (const p of parts) out[p] = !!(st.hideCosAll || st[COS_GROUP_KEYS[g]] || st[COS_KEYS[p]]);
+        return out;
+    }
+    let cosHide = {};
+    try { cosHide = cosCompute(JSON.parse(localStorage.getItem('mcf_overhaul_settings')) || {}); } catch (e) {}
+    const cosChatParts = () => cosHide.chatColour || cosHide.chatBg || cosHide.chatName || cosHide.kingBubble;
+    // A cheap look at the raw text first: frames without anything to hide are never parsed.
+    function cosConcerns(txt) {
+        if (typeof txt !== 'string') return false;
+        for (const [field, part] of Object.entries(COS_MARBLE_FIELDS)) if (cosHide[part] && txt.indexOf('"' + field + '"') !== -1) return true;
+        if (cosChatParts() && txt.indexOf(CHAT_COS_SCHEMA) !== -1) return true;
+        return !!cosHide.wreath && txt.indexOf('"kingCosmetics"') !== -1;
+    }
+    function chatCosStrip(v) {
+        const slot = v.panel && v.panel.sourceSlot;
+        const dropPanel = (cosHide.chatBg && slot === 'chat_background_style') || (cosHide.kingBubble && slot === 'king_chat_bubble_style');
+        if (!cosHide.chatColour && !cosHide.chatName && !dropPanel) return v;
+        const o = Object.assign({}, v, { plainFallback: Object.assign({}, v.plainFallback) });
+        if (cosHide.chatColour) { delete o.text; o.assist = { preset: 'none' }; delete o.plainFallback.textHex; }
+        if (cosHide.chatName) {
+            delete o.username; delete o.plainFallback.usernameHex;
+            if (o.items && o.items.username_style) o.items = Object.assign({}, o.items, { username_style: { itemId: null } });
+        }
+        if (dropPanel) {
+            delete o.panel; delete o.plainFallback.panelHex;
+            if (slot === 'king_chat_bubble_style') o.king = Object.assign({}, o.king, { applied: false });
+        }
+        return o;
+    }
+    function cosReviver(k, v) {
+        const part = COS_MARBLE_FIELDS[k];
+        if (part) return cosHide[part] ? undefined : v;
+        if (k === 'kingCosmetics' && cosHide.wreath && v && typeof v === 'object' && v.wreath) {
+            const o = Object.assign({}, v); delete o.wreath; return o;
+        }
+        if (v && typeof v === 'object' && v.schema === CHAT_COS_SCHEMA) return chatCosStrip(v);
+        return v;
+    }
 
-    // Wraps the game's own message listener. Frames without receipts - binary physics, event
-    // digests, and every frame while the switch is off - are handed over untouched.
-    function indicatorFilter(fn) {
-        return function (e) {
-            if (bidIndicatorsOff && typeof e.data === 'string' && e.data.indexOf(INDICATOR_KEY) !== -1) {
+    // Wraps a page message listener (gameplay, chat and king sockets). Frames that carry nothing
+    // to hide - binary physics, digests, everything while all switches are off - go through as they came.
+    const cosWrapped = new WeakMap();
+    function cosmeticFilter(fn) {
+        if (cosWrapped.has(fn)) return cosWrapped.get(fn);
+        const w = function (e) {
+            if (cosConcerns(e.data)) {
                 let ev = null;
                 try {
-                    const data = JSON.stringify(JSON.parse(e.data, dropIndicators));
-                    ev = new pageWindow.MessageEvent('message', { data, origin: e.origin, lastEventId: e.lastEventId });
+                    ev = new pageWindow.MessageEvent('message', { data: JSON.stringify(JSON.parse(e.data, cosReviver)), origin: e.origin, lastEventId: e.lastEventId });
                 } catch (err) { /* a frame we cannot read goes through as it came */ }
                 if (ev) return fn.call(this, ev);
             }
             return fn.call(this, e);
         };
+        cosWrapped.set(fn, w);
+        return w;
     }
 
-    // Installed only once the switch is first turned on: until then this script leaves the
-    // page's fetch alone. Only the reply of /bid/place is ever looked at.
-    let bidFetchWrapped = false;
-    function wrapBidFetch() {
-        if (bidFetchWrapped) return;
-        bidFetchWrapped = true;
+    // Installed only once a switch is first turned on: until then this script leaves the page's
+    // fetch alone. Only the reply of /bid/place and the King snapshot are ever looked at.
+    let cosFetchWrapped = false;
+    function wrapCosFetch() {
+        if (cosFetchWrapped) return;
+        cosFetchWrapped = true;
         try {
             const nativeFetch = pageWindow.fetch;
             pageWindow.fetch = function (input, init) {
                 const pending = nativeFetch.apply(this, arguments);
                 let url = '';
                 try { url = typeof input === 'string' ? input : String((input && input.url) || ''); } catch (e) {}
-                if (!bidIndicatorsOff || url.indexOf('/bid/place') === -1) return pending;
+                if (url.indexOf('/bid/place') === -1 && url.indexOf('/api/king/snapshot') === -1) return pending;
                 return pending.then(res => res.clone().text().then(txt => {
-                    if (txt.indexOf(INDICATOR_KEY) === -1) return res;
-                    return new pageWindow.Response(JSON.stringify(JSON.parse(txt, dropIndicators)),
+                    if (!cosConcerns(txt)) return res;
+                    return new pageWindow.Response(JSON.stringify(JSON.parse(txt, cosReviver)),
                         { status: res.status, statusText: res.statusText, headers: res.headers });
                 }).catch(() => res));
             };
-        } catch (e) { console.warn('[MarbleLuceFall] could not filter bid replies:', e.message); }
+        } catch (e) { console.warn('[MarbleLuceFall] could not filter cosmetics from replies:', e.message); }
     }
-    function setBidIndicatorsOff(on) {
-        bidIndicatorsOff = !!on;
-        if (bidIndicatorsOff) wrapBidFetch();
-    }
-    if (bidIndicatorsOff) wrapBidFetch();
+    if (Object.values(cosHide).some(Boolean)) wrapCosFetch();
 
     try {
         const NativeWebSocket = pageWindow.WebSocket;
@@ -218,12 +267,18 @@
         const nativeAdd = proto.addEventListener;
         proto.addEventListener = function (...args) {
             tapSocket(this);
-            // The game's message listener on the gameplay socket gets the indicator filter. A
-            // socket found late (see above) already has its listener - indicators then stay
-            // until the next reload.
-            if (args[0] === 'message' && typeof args[1] === 'function' && tappedSockets.has(this) && !ownListeners.has(args[1]))
-                args[1] = indicatorFilter(args[1]);
+            // Every page message listener - gameplay, chat and king socket - gets the cosmetics
+            // filter (6.49). A socket found late (see above) already has its listener - its
+            // cosmetics then stay until the next reload.
+            if (args[0] === 'message' && typeof args[1] === 'function' && !ownListeners.has(args[1]))
+                args[1] = cosmeticFilter(args[1]);
             return nativeAdd.apply(this, args);
+        };
+        // A listener taken off again has to be the wrapped one, or it would stay on.
+        const nativeRemove = proto.removeEventListener;
+        proto.removeEventListener = function (...args) {
+            if (args[0] === 'message' && typeof args[1] === 'function' && cosWrapped.has(args[1])) args[1] = cosWrapped.get(args[1]);
+            return nativeRemove.apply(this, args);
         };
         const nativeSend = proto.send;
         proto.send = function (...args) { tapSocket(this); return nativeSend.apply(this, args); };
@@ -375,7 +430,7 @@
             { key: 'throneDrinks', def: false, redraw: true, label: 'Pour beverages',
               hint: 'Opt-in. The beverages picked below are poured as soon as the game unlocks them, 15 seconds into your reign, each through the game\'s own button. Its limits still apply: every beverage, size and currency once per reign, and only with enough gold or diamonds. Starts with your next reign, never in the middle of one.' },
         ]},
-        { title: 'Ticket rail', blurb: 'Rebellion, Unbid, folding, extra chips and bidding indicators.', items: [
+        { title: 'Ticket rail', blurb: 'Rebellion, Unbid, folding and extra chips.', items: [
             { key: 'railGroup', label: 'Rebellion button and folding',
               hint: 'Rebellion sits beside the chips, the bigger amounts fold away behind an arrow. While you are King it becomes Royal Celebration, beside the toll.' },
             { key: 'unbidButton', label: 'Unbid button',
@@ -387,8 +442,33 @@
             { key: 'extraChips', label: 'Extra ticket chips',
               hint: '10K up to 1B, unlocked like the built-in ones: at ten times the amount in tickets.' },
             { key: 'centreRail', label: 'Centre the rail on the board' },
-            { key: 'hideBidIndicators', def: false, label: 'Hide bidding indicators',
-              hint: 'Opt-in. The decorated bid banners (Bidding Indicator Style) are no longer drawn on the lanes, for every player including you: each bid shows in the game\'s plain grey banner with the amount. Only you see it this way. Takes hold with the next run on each lane.' },
+        ]},
+        // 6.49: one switch for everything, one per group, one per cosmetic. A switch above covers the
+        // ones below it (they show on and greyed); each keeps its own state for when it is uncovered.
+        { title: 'Cosmetics', blurb: 'Hide cosmetics: all at once, a whole group, or one by one.', cosmetics: true, items: [
+            { key: 'hideCosAll', def: false, redraw: true, label: 'Hide all cosmetics',
+              hint: 'Opt-in. Every marble, chat and King cosmetic below is drawn the plain way, for every player including you. Only you see it this way; nothing changes for the others.' },
+        ], groups: [
+            { title: 'Marbles', note: 'Takes hold with the next run on each lane.', items: [
+                { key: 'hideCosMarbles', def: false, redraw: true, group: true, label: 'Hide all marble cosmetics' },
+                { key: 'hideTrails', def: false, label: 'Hide marble trails', hint: 'Marbles run without their trail.' },
+                { key: 'hideBorders', def: false, label: 'Hide marble borders', hint: 'No rings around the marbles.' },
+                { key: 'hideAuras', def: false, label: 'Hide rebellion auras', hint: 'A rebellion shows in the game\'s own default aura.' },
+                { key: 'hideBidIndicators', def: false, label: 'Hide bidding indicators',
+                  hint: 'Every bid shows in the game\'s plain grey banner with the amount.' },
+            ]},
+            { title: 'Chat', note: 'From the next message on. Hiding the whole group uses the game\'s own cosmetics button in the chat header and turns it back on when you switch this off.', items: [
+                { key: 'hideCosChat', def: false, redraw: true, group: true, label: 'Hide all chat cosmetics' },
+                { key: 'hideChatColours', def: false, label: 'Hide chat font colours', hint: 'Messages in plain white.' },
+                { key: 'hideChatBackgrounds', def: false, label: 'Hide chat backgrounds', hint: 'No coloured or patterned panels behind messages.' },
+                { key: 'hideUsernameStyles', def: false, label: 'Hide username styles', hint: 'Names in the plain name colour, without flourishes.' },
+                { key: 'hideKingBubbles', def: false, label: 'Hide King chat bubbles', hint: 'The King\'s messages in the game\'s default royal bubble.' },
+            ]},
+            { title: 'King', items: [
+                { key: 'hideCosKing', def: false, redraw: true, group: true, label: 'Hide all King cosmetics' },
+                { key: 'hideCrown', def: false, label: 'Hide the crown', hint: 'No crown on the King tile.' },
+                { key: 'hideWreath', def: false, label: 'Hide the wreath', hint: 'No wreath around the King\'s picture. Takes hold with the next King update.' },
+            ]},
         ]},
         { title: 'Chat', blurb: 'Slim rail, pop-out window, growing message box and the enhanced chat.', items: [
             { key: 'chatRail', label: 'Smooth collapse and slim rail',
@@ -474,7 +554,8 @@
     // Every switch of every page, and the ones that hang on another (needs).
     const ALL_ITEMS = SETTINGS_SECTIONS.flatMap(sectionItems);
     function sectionItems(section) {
-        return [...(section.items || []), ...(section.grid ? section.grid.items : []), ...(section.extra ? section.extra.items : [])];
+        return [...(section.items || []), ...(section.grid ? section.grid.items : []), ...(section.extra ? section.extra.items : []),
+                ...(section.groups || []).flatMap(g => g.items)];
     }
     function itemSubs(item) { return item.subs || (item.sub ? [item.sub] : []); }
 
@@ -861,9 +942,42 @@
 
     function saveSettings() {
         try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) {}
-        setBidIndicatorsOff(settings.hideBidIndicators);
+        setCosmeticsHidden();
     }
-    setBidIndicatorsOff(settings.hideBidIndicators);
+    // Which switch covers an item on the Cosmetics page: the main switch, or its group switch.
+    const COS_COVER = {};
+    for (const [g, parts] of Object.entries(COS_GROUPS)) {
+        COS_COVER[COS_GROUP_KEYS[g]] = ['hideCosAll'];
+        for (const p of parts) COS_COVER[COS_KEYS[p]] = ['hideCosAll', COS_GROUP_KEYS[g]];
+    }
+    const cosCovered = key => (COS_COVER[key] || []).some(k => settings[k]);
+    // The game's own chat cosmetics button (chat header, aria-pressed = cosmetics on, remembered by
+    // the game in mcf.chat.cosmetics.enabled.v1) does "all chat cosmetics" better than any filter:
+    // already drawn lines turn plain too. Pressed only when our wish changes, so a click of the
+    // player's own on that button is respected until the switch here is touched again; turned back
+    // on only if this script was the one that turned it off.
+    let cosChatWish = null;
+    function cosChatNative() {
+        const want = !!(settings.hideCosAll || settings.hideCosChat);
+        if (want === cosChatWish) return;
+        const btn = document.querySelector('.mcf-chat__cosmetics-toggle, [data-role="chat-cosmetics-toggle"]');
+        if (!btn) return;   // the chat is not there yet: try again on the next round
+        const on = btn.getAttribute('aria-pressed') === 'true';
+        let ours = false;
+        try { ours = localStorage.getItem('mcfo_cos_chatnative') === '1'; } catch (e) {}
+        if (want && on) { btn.click(); try { localStorage.setItem('mcfo_cos_chatnative', '1'); } catch (e) {} }
+        else if (!want && !on && ours) btn.click();
+        if (!want) try { localStorage.removeItem('mcfo_cos_chatnative'); } catch (e) {}
+        cosChatWish = want;
+    }
+    function setCosmeticsHidden() {
+        cosHide = cosCompute(settings);
+        if (Object.values(cosHide).some(Boolean)) wrapCosFetch();
+        document.documentElement.setAttribute('data-mcfo-cos', Object.keys(cosHide).filter(p => cosHide[p]).join(' '));
+        cosChatNative();
+    }
+    setCosmeticsHidden();
+    setInterval(cosChatNative, 2000);
 
     // =========================================================================================
     // 2. ANCHORS
@@ -2002,6 +2116,7 @@
            each time (crownOverlayProofRenderer.js, draw -> resize). Hidden, that box is 0x0 and
            the canvas drops to 1x1 pixel, so the loop that keeps running costs next to nothing. */
         html[data-mcfo-perf~="crownhide"] [data-role="king-crown-overlay-layer"] { display: none !important; }
+        html[data-mcfo-cos~="crown"] [data-role="king-crown-overlay-layer"] { display: none !important; }
 
         /* Crowns without a 3D model turn through a CSS animation instead (crownOverlayProofBandTurn,
            kingPane.js); the still crown stops that one too. The 3D ones are handled in section 14. */
@@ -2081,6 +2196,9 @@
            their headings. */
         .mcfo-set__section::after { content: ''; flex: 1; height: 1px; background: #1c2d3b; }
         .mcfo-set__sub-title { margin: 12px 2px 6px; font-size: 12px; font-weight: 700; color: #9ab0c0; }
+        .mcfo-set__subnote { margin: -2px 2px 6px; font-size: 11.5px; line-height: 1.35; color: #7f95a6; }
+        /* Cosmetics page (6.49): the group switch heads its card. */
+        .mcfo-set__item[data-group] + .mcfo-set__item { border-top: 2px solid #23394b; }
 
         .mcfo-set__card {
             border: 1px solid #1f3242; border-radius: 10px;
@@ -11986,12 +12104,16 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.48';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.49';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.49', date: '2026-10-06', items: [
+            'New settings page Cosmetics: hide every cosmetic with one switch, a whole group (Marbles, Chat, King) or one by one: marble trails, borders, rebellion auras, bidding indicators; chat font colours, backgrounds, username styles, King chat bubbles; the crown and the wreath on the King tile. Everything is then drawn the plain way, for every player including you, and only you see it so. Hiding all chat cosmetics uses the game\'s own cosmetics button in the chat header.',
+            'Hide bidding indicators has moved from Settings › Ticket rail to Settings › Cosmetics. A switch you had on stays on.',
+        ] },
         { v: '6.48', date: '2026-10-06', items: [
             'Loadouts now include Wreaths and Rebellion Auras: on those inventory pages the cards get + Loadout and + Pool like trails and borders, and putting on a loadout equips them too. Loadout codes stay compatible with the MarbleMind bot.',
         ] },
@@ -12724,6 +12846,22 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             box.appendChild(card);
             if (section.throne) box.appendChild(throneDrinksCard());
 
+            for (const group of section.groups || []) {
+                const sub = document.createElement('div');
+                sub.className = 'mcfo-set__sub-title';
+                sub.textContent = group.title;
+                box.appendChild(sub);
+                if (group.note) {
+                    const note = document.createElement('div');
+                    note.className = 'mcfo-set__subnote';
+                    note.textContent = group.note;
+                    box.appendChild(note);
+                }
+                const gcard = document.createElement('div');
+                gcard.className = 'mcfo-set__card';
+                for (const item of group.items) gcard.appendChild(settingItem(item));
+                box.appendChild(gcard);
+            }
             if (section.grid) {
                 const sub = document.createElement('div');
                 sub.className = 'mcfo-set__sub-title';
@@ -13433,6 +13571,9 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             wrap.appendChild(sub);
         }
         if (item.needs && !settings[item.needs]) wrap.setAttribute('data-off', '');
+        if (item.group) wrap.setAttribute('data-group', '');
+        // Cosmetics page: a switch covered by the main or group switch shows as on and greyed.
+        if (cosCovered(item.key)) { input.checked = true; input.disabled = true; wrap.setAttribute('data-off', ''); }
 
         input.addEventListener('change', () => {
             settings[item.key] = input.checked;
