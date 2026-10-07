@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.54.0
+// @version      6.54.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -2259,9 +2259,11 @@
         /* === TASKBAR ===
            Only there while something is parked. Floats just above the game footer, which is full
            to the brim — measured at 1920x905 the footer holds our own line on the left, the bid
-           area across the middle and the navigation on the right, with no free strip to dock to. */
+           area across the middle and the navigation on the right, with no free strip to dock to.
+           Sits UNDER the desk (10040): a window dragged down into the corner covers the parked
+           buttons instead of being covered by them (6.54.1). */
         .mcfo-taskbar {
-            position: fixed; left: 12px; z-index: 10041;
+            position: fixed; left: 12px; z-index: 10039;
             display: flex; gap: 8px; flex-wrap: wrap;
             pointer-events: auto;
         }
@@ -12353,12 +12355,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.54.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.54.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.54.1', date: '2026-10-07', items: [
+            'Windows: the buttons of minimised windows now stay in the background. A window moved down into the corner covers them instead of sitting behind them.',
+        ] },
         { v: '6.54.0', date: '2026-10-07', items: [
             'Autobid: new switch "Risk tiles in a Royal Celebration" (off by default). While a tile belongs to a Royal Celebration its zero zones are safe, so Autobid may bid on risk tiles like Chance Time or Jackball Deathpot then. Minus zones still count, multiplied by the celebration; your blocklist still applies.',
         ] },
