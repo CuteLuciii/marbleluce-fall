@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.54.1
+// @version      6.54.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -12355,12 +12355,16 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.54.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.54.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.54.2', date: '2026-10-07', items: [
+            'Inventory, Rebellion Auras: the aura pictures stay inside their card again. If the window was minimised or hidden while the game drew them, an aura could run over its name and hide the Equip and Pool buttons.',
+            'Inventory in a narrow window (about 820 to 1000 px wide): details, preview and your items now scroll as one column next to the sidebar, instead of squeezing the item list down to a single cut-off card.',
+        ] },
         { v: '6.54.1', date: '2026-10-07', items: [
             'Windows: the buttons of minimised windows now stay in the background. A window moved down into the corner covers them instead of sitting behind them.',
         ] },
@@ -15962,7 +15966,13 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
            then gets the item's shape. */
         .inventoryBordersPage .inventorySelectionPanel .inventoryCardPreview { aspect-ratio: 1 / 1; }
         .inventoryBiddingIndicatorsPage .inventorySelectionPanel .inventoryCardPreview { aspect-ratio: 2.6 / 1; }
-        .inventorySelectionPanel .inventoryCardPreview svg[data-mcfo-fit="1"] { width: 100% !important; height: 100% !important; aspect-ratio: auto !important; }
+        /* 6.54.2: rebellion auras had no box at all - the game sets aspect-ratio auto + overflow visible on that
+           page, and its SVG comes with an inline 320 x 320 px (max-width only shrinks the width). Whenever the fit
+           below had not happened yet (window hidden while the game drew), the picture ran 320 px tall over the
+           name and the Equip / Pool buttons. Now the box is square and the SVG always fills it, fitted or not. */
+        .inventoryRebellionAurasPage .inventorySelectionPanel .inventoryCardPreview { aspect-ratio: 1 / 1; overflow: hidden; }
+        .inventorySelectionPanel .inventoryCardPreview [data-border-card] > svg,
+        .inventorySelectionPanel .inventoryCardPreview svg[data-mcfo-fit="1"] { width: 100% !important; height: 100% !important; max-width: none !important; aspect-ratio: auto !important; }
         .inventorySelectionPanel .inventoryCardPreview [data-border-card] { height: 100%; }
         .inventorySelectionPanel .inventoryCard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 7px; }
         .inventorySelectionPanel .inventoryCard > .inventoryCardPreview { flex: none; }
@@ -15980,6 +15990,19 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         .inventorySelectionPanel .inventoryCardActions .inventoryAction[data-mcfo-short]::after { content: attr(data-mcfo-short); font-size: 12px; }
         .inventorySelectionPanel .mcfo-lob { gap: 4px; margin-top: 0; }
         .inventorySelectionPanel .mcfo-lob__pick { padding: 4px 3px; font-size: 11px; }
+        /* 6.54.2: between 821 px (where the game turns to one column) and ~1000 px the sidebar (280) and the
+           middle column (430) leave the card list about 100 px - one cut-off card. Stack the middle column
+           and the list there; the middle column keeps its full width, so Random On is not cut off either. */
+        @media (min-width: 821px) and (max-width: 999px) {
+            /* one scrolling column - details, preview, list - instead of three boxes that each scroll
+               (stacked boxes squeezed the details so far that Default / Random were hidden) */
+            .inventoryGrid { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: max-content; align-content: start; align-items: start;
+                overflow-y: auto; overscroll-behavior: contain; }
+            .inventoryGrid .inventoryFocus { grid-template-rows: auto auto; overflow: visible; }
+            .inventoryGrid .inventoryFocus > .inventoryPanel:first-child,
+            .inventoryGrid .inventoryBorderFocusPanel, .inventoryGrid .inventoryTrailFocusPanel,
+            .inventoryGrid .inventorySelectionPanel, .inventoryGrid .inventorySelectionPanel > .inventoryCards { overflow: visible; }
+        }
     `;
     // Cut SVG previews to the item (6.52.2). The renderers draw into a fixed square or strip
     // (borders -84..84 around a marble of radius ~24, indicators 450 x 116 with the marble at the
@@ -16064,7 +16087,9 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         let tries = 0;
         const run = () => {
             const open = invFitPreviews(root);
-            if (open && ++tries < 20) setTimeout(run, 150); else invFitLater.set(root, false);
+            // 6.54.2: no longer give up after 3 s - a window that was minimized or hidden while the game
+            // drew cannot be measured yet; keep trying once a second (2 min) until it can.
+            if (open && ++tries < 140) setTimeout(run, tries < 20 ? 150 : 1000); else invFitLater.set(root, false);
         };
         requestAnimationFrame(run);
     }
@@ -16088,19 +16113,21 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     // so does a click in the sidebar. Narrow windows (below 821 px) scroll the document instead,
     // which the loading step collapses - that one is put back too.
     const invCardKey = c => c.getAttribute('data-id') || c.getAttribute('data-border-card-id') || c.getAttribute('data-trail-card-id') || '';
+    // The cards of a scroller: the card list itself, or (6.54.2, narrow window) the whole column around it.
+    const invCards = el => el.matches('.inventoryCards') ? el.querySelectorAll(':scope > article') : el.querySelectorAll('.inventorySelectionPanel .inventoryCards > article');
     function invTopCard(list) {
         const top = list.getBoundingClientRect().top;
-        for (const c of list.querySelectorAll(':scope > article')) {
+        for (const c of invCards(list)) {
             const r = c.getBoundingClientRect();
             if (r.bottom > top) return { id: invCardKey(c), off: r.top - top };
         }
         return {};
     }
-    const INV_SCROLLERS = ['.inventorySelectionPanel > .inventoryCards', '.inventorySidebar'];
+    const INV_SCROLLERS = ['.inventorySelectionPanel > .inventoryCards', '.inventorySidebar', '.inventoryGrid'];   // the last scrolls only between 821 and 999 px
     function invKeepScroll(doc, root) {
         const keep = new Map();
         const pager = () => { const p = root.querySelector('.inventorySelectionPanel > .inventoryActions span'); return p ? p.textContent.trim() : ''; };
-        const key = i => i === 1 ? 'sidebar' : loPage(doc) + '|' + pager();
+        const key = i => i === 1 ? 'sidebar' : (i === 2 ? 'col|' : '') + loPage(doc) + '|' + pager();
         const loading = () => !!root.querySelector('.inventoryStatus');
         let docWas = false;
         doc.addEventListener('scroll', e => {
@@ -16127,7 +16154,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 // The previews keep growing for a moment after that (the browser's own scroll
                 // anchoring then held a spot INSIDE the card and let its top slide up), so the card is
                 // held in place for 1.5 s - until the player scrolls or clicks.
-                const find = () => v.id && [...el.querySelectorAll(':scope > article')].find(c => invCardKey(c) === v.id);
+                const find = () => v.id && [...invCards(el)].find(c => invCardKey(c) === v.id);
                 const place = () => { const card = find(); if (!card) return false;
                     const d = card.getBoundingClientRect().top - el.getBoundingClientRect().top - v.off;
                     if (Math.abs(d) >= 1) el.scrollTop += d; return true; };
