@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.53.0
+// @version      6.54.0
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -151,6 +151,27 @@
     const lanes = new Map();          // laneKey -> { phase, open, runId, tile, at, runChangedAt }
     const laneListeners = [];
     const tapStartedAt = Date.now();
+    // Royal Celebration per tile (6.54): laneKey -> { runId, tile, multiplier, at }. The game marks
+    // every tile that belongs to a celebration on the tile itself (royalCelebration, like kingToll),
+    // from the moment it is revealed. That mark only comes in simsync_state.v1, not in lane_state.v1.
+    // It counts for exactly that run and that tile (see celebrationFree in 9g), so a mark never has
+    // to be cleared: the next run on the lane simply does not match it any more.
+    const laneCelebration = new Map();
+    function noteCelebration(msg) {
+        const laneKey = String(msg.laneKey || '');
+        const run = msg.run && typeof msg.run === 'object' ? msg.run : {};
+        const runId = String(run.runId || '');
+        if (!laneKey || !runId) return;
+        // The same places the bot looks (rcTileMerken), in the same order.
+        const sources = [run.tile, msg.revealed && msg.revealed.tile, msg.revealedTileTruth, msg.staticWorld];
+        const src = sources.find(t => t && typeof t === 'object' && t.royalCelebration && typeof t.royalCelebration === 'object');
+        if (!src) return;
+        const lane = lanes.get(laneKey);
+        const tile = String(src.tileId || (run.tile && run.tile.tileId) || (msg.revealedTileTruth && msg.revealedTileTruth.tileId)
+                            || (lane && lane.runId === runId ? lane.tile : '') || '').trim();
+        if (!tile) return;
+        laneCelebration.set(laneKey, { runId, tile, multiplier: Number(src.royalCelebration.multiplier) || 0, at: Date.now() });
+    }
     let tapInstalled = false;
 
     // One lane_state payload — from the socket, or from the reply to a bid (bidPreviewLaneState).
@@ -182,12 +203,19 @@
         if (msg.kind === 'lane_state.v1' && msg.laneKey && msg.payload && typeof msg.payload === 'object') {
             noteLane(String(msg.laneKey), msg.payload, 'socket');
         }
+        if (msg.kind === 'simsync_state.v1' && msg.laneKey) noteCelebration(msg);
     }
 
     function readFrame(data) {
         // Binary frames are physics, most text frames are event digests. Only a frame that
         // mentions lane_state is worth a JSON.parse.
-        if (typeof data !== 'string' || data.indexOf('lane_state.v1') === -1) return;
+        // A simsync frame is parsed only when it carries a celebration mark (6.54): those frames
+        // are large, and outside a celebration none of them is needed.
+        if (typeof data !== 'string') return;
+        const laneFrame = data.indexOf('lane_state.v1') !== -1;
+        const celebFrame = !laneFrame && data.indexOf('simsync_state.v1') !== -1 && data.indexOf('"royalCelebration"') !== -1
+                           && /"royalCelebration"\s*:\s*\{/.test(data);
+        if (!laneFrame && !celebFrame) return;
         try { takeFrame(JSON.parse(data)); } catch (e) { /* a broken frame is skipped */ }
     }
 
@@ -771,6 +799,10 @@
     settings.autobidAmount = clampTickets(stored.autobidAmount);
     settingDefaults.autobidRisk = true;
     settings.autobidRisk = stored.autobidRisk !== false;
+    // 6.54: risk tiles during a Royal Celebration. Off unless switched on: the celebration makes
+    // the zero zones safe, but it multiplies the minus zones (see celebrationFree in 9g).
+    settingDefaults.autobidCelebration = false;
+    settings.autobidCelebration = stored.autobidCelebration === true;
     // 6.29: tile lists, as in the MarbleMind bot. With "Only known tiles" on (the default) a bid
     // goes only onto a tile on the allowlist — a tile the game has just added is skipped until
     // someone allows it by hand. The blocklist comes on top of the risk tiles. The starting
@@ -9599,9 +9631,27 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     const inList = (list, tile) => { const n = normTile(tile); return !!n && list.some(t => normTile(t) === n); };
     const isBlockedTile = tile => isRiskTile(tile) || inList(settings.autobidBlock, tile);
     const isAllowedTile = tile => inList(settings.autobidAllow, tile);
+    // A risk tile that is part of a Royal Celebration (6.54, the bot's rcFrei since 2.10.8). All
+    // risk tiles are risky through SetToAbsolute 0 (points set to zero), and a celebration turns
+    // exactly those zones, and the division zones, into safe_no_loss (royalCelebrationAffectedComponents
+    // in the game's viewer). Minus zones are NOT made safe, they are multiplied by the celebration
+    // and the rarity: Double or Nothing, V-Risko and Zero or Hero can still cost points (the bot's
+    // worst case, Double or Nothing on a Cosmic tile in a x10 celebration: 50 million).
+    // Only for the run and the tile the mark came with, and only with a multiplier above 1 — as
+    // in the game's own code (celebrating = royalMultiplier > 1). Otherwise a risk tile right after
+    // the celebration would inherit the mark of the tile before it on the same lane.
+    function celebrationFree(laneKey, tile) {
+        if (!settings.autobidCelebration || !laneKey) return false;
+        const c = laneCelebration.get(laneKey), l = lanes.get(laneKey);
+        const n = normTile(tile);
+        return !!c && !!l && !!n && c.multiplier > 1 && c.runId === l.runId
+            && normTile(c.tile) === n && normTile(l.tile) === n;
+    }
     // Why a tile gets no bid, or '' when it may have one. Only asked with risk protection on.
-    function tileVeto(tile) {
-        if (isRiskTile(tile)) return 'risk';
+    // With a lane, a risk tile of a Royal Celebration passes (6.54) — your blocklist still counts,
+    // the allowlist does not (risk tiles are never on it).
+    function tileVeto(tile, laneKey) {
+        if (isRiskTile(tile)) return celebrationFree(laneKey, tile) ? (inList(settings.autobidBlock, tile) ? 'blocked' : '') : 'risk';
         if (inList(settings.autobidBlock, tile)) return 'blocked';
         if (settings.autobidKnownOnly && !isAllowedTile(tile)) return 'unknown';
         return '';
@@ -9736,24 +9786,24 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             }
             // Holding back also for a tile we do not know: the server may put the bid there.
             for (const [k, l] of lanes) {
-                const veto = l.open ? tileVeto(l.tile) : '';
+                const veto = l.open ? tileVeto(l.tile, k) : '';
                 if (veto) return abSet('hold', `Holding: ${l.tile} (${vetoWords[veto]}) is taking bids in the ${laneName(k)} lane, a bid now could land there.`);
             }
             const stale = untrustedLane(now);
             if (stale) return abSet('hold', `Holding: the ${laneName(stale)} lane has shown the same run for over 4 minutes, its view may be out of date.`);
         }
 
-        let done = null, skipped = null;
+        let done = null, skipped = null, skippedKey = '';
         const candidates = [];
         for (const [k, l] of lanes) {
             if (l.phase !== 'TILE_REVEALED' || !l.open || !l.runId) continue;
-            if (risk && (now < (ab.riskLock[k] || 0) || tileVeto(l.tile))) { skipped = l; continue; }
+            if (risk && (now < (ab.riskLock[k] || 0) || tileVeto(l.tile, k))) { skipped = l; skippedKey = k; continue; }
             if (alreadyBid(k, l.runId)) { done = l; continue; }
             candidates.push([k, l]);
         }
         if (!candidates.length) {
             return abSet('on', done ? `Bid on ${done.tile}. Waiting for the next tile.`
-                             : skipped ? `Skipping ${skipped.tile}: ${vetoWords[tileVeto(skipped.tile)] || 'a risk tile'}.`
+                             : skipped ? `Skipping ${skipped.tile}: ${vetoWords[tileVeto(skipped.tile, skippedKey)] || 'a risk tile'}.`
                              : 'On. Waiting for the next bidding window.');
         }
 
@@ -9777,7 +9827,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
 
     function placeAutoBid(laneKey, lane, amount) {
         ab.busy = true;
-        abSet('on', `Bidding ${amount} on ${lane.tile} …`);
+        abSet('on', `Bidding ${amount} on ${lane.tile}${isRiskTile(lane.tile) ? ' (risk tile, Royal Celebration)' : ''} …`);
         fetch('/bid/place', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -9805,7 +9855,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 ab.bids += 1;
                 ab.lastBid = { tile: landedTile || lane.tile, amount, at: Date.now() };
                 if (landedTile && normTile(landedTile) !== normTile(lane.tile)) {
-                    if (settings.autobidRisk && tileVeto(landedTile)) takeBack(landedTile, landedLane, lane.tile);
+                    if (settings.autobidRisk && tileVeto(landedTile, landedLane)) takeBack(landedTile, landedLane, lane.tile);
                     else abNote('hold', `The server put this bid on ${landedTile}, not ${lane.tile}.`);
                 }
             })
@@ -9877,6 +9927,9 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 +   '<input type="checkbox" class="mcfo-switch__input" data-mcfo-ab="risk"><span class="mcfo-switch" aria-hidden="true"></span></label>'
                 + '<div class="mcfo-auto__hint" data-mcfo-ab="riskhint"></div>'
                 + '<div data-mcfo-ab="tiles">'
+                +   '<label class="mcfo-auto__row"><span class="mcfo-auto__label">Risk tiles in a Royal Celebration</span>'
+                +     '<input type="checkbox" class="mcfo-switch__input" data-mcfo-ab="celeb"><span class="mcfo-switch" aria-hidden="true"></span></label>'
+                +   '<div class="mcfo-auto__hint" data-mcfo-ab="celebhint"></div>'
                 +   '<label class="mcfo-auto__row"><span class="mcfo-auto__label">Only known tiles</span>'
                 +     '<input type="checkbox" class="mcfo-switch__input" data-mcfo-ab="known"><span class="mcfo-switch" aria-hidden="true"></span></label>'
                 +   '<div class="mcfo-auto__hint" data-mcfo-ab="knownhint"></div>'
@@ -9946,6 +9999,11 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 autobidTick();
             });
 
+            q('celeb').addEventListener('change', e => {
+                settings.autobidCelebration = e.target.checked;
+                saveSettings();
+                autobidTick();
+            });
             q('known').addEventListener('change', e => {
                 settings.autobidKnownOnly = e.target.checked;
                 saveSettings();
@@ -9991,6 +10049,12 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
 
         // Tile lists, only with risk protection: without it every tile gets a bid anyway.
         q('tiles').hidden = !settings.autobidRisk;
+        const celeb = q('celeb');
+        if (celeb.checked !== settings.autobidCelebration) celeb.checked = settings.autobidCelebration;
+        put(q('celebhint'), settings.autobidCelebration
+            ? 'Bids on a risk tile while it is part of a Royal Celebration: the celebration makes its zero zones safe. Minus zones (Double or Nothing, V-Risko, Zero or Hero) are multiplied by it, so points can still be lost there. Your blocklist still counts.'
+            : 'Off: risk tiles are skipped during a Royal Celebration too.');
+        tone(q('celebhint'), settings.autobidCelebration ? 'warn' : '');
         const known = q('known');
         if (known.checked !== settings.autobidKnownOnly) known.checked = settings.autobidKnownOnly;
         put(q('knownhint'), settings.autobidKnownOnly
@@ -12289,12 +12353,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.53.0';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.54.0';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.54.0', date: '2026-10-07', items: [
+            'Autobid: new switch "Risk tiles in a Royal Celebration" (off by default). While a tile belongs to a Royal Celebration its zero zones are safe, so Autobid may bid on risk tiles like Chance Time or Jackball Deathpot then. Minus zones still count, multiplied by the celebration; your blocklist still applies.',
+        ] },
         { v: '6.53', date: '2026-10-06', items: [
             'Inventory: Crowns open at once. The game sends the whole crown list (over a megabyte) on every click, which took 2-3 seconds; the last list is now shown straight away and checked against the server in the background. If something changed - a new crown, or the bot or a loadout equipped one - the page loads again by itself with the fresh list.',
         ] },
