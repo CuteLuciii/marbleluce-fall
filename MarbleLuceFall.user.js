@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.57.2
-// @description  Layout overhaul for Marble Crownfall: 50+ colour themes, pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, a new inventory with loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
+// @version      6.58
+// @description  Layout overhaul for Marble Crownfall: 50+ colour themes, pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, new inventory and achievements pages, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
 // @match        *://marblecrownfall.com/*
@@ -1116,6 +1116,500 @@
         }
     `;
 
+    // The new achievements page (6.58), built like the new inventory: categories on the left with an
+    // Overview on top, search / status / sort above a grid of cards, a detail column on the right.
+    // Same way in as the inventory app: turned into source text and run in the page of the
+    // achievements frame by achOverhaulBoot, so it must not use anything from outside its own
+    // body. Everything comes from one request, /api/achievements (the same the game's page makes);
+    // badges are plain images from the game's server. Opening the page tells the server the new
+    // unlocks have been seen (/api/achievements/ack), exactly as the game's page does - its own
+    // page is kept from doing it twice (see achOverhaulBoot).
+    function achOverhaulApp() {
+        const root = document.getElementById('mcfo-ach-root');
+        if (!root || root.__mi) return;
+        root.__mi = true;
+        const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const big = v => { try { return BigInt(v ?? 0); } catch (e) { return BigInt(Math.trunc(Number(v) || 0)); } };
+        const fmt = v => { try { return BigInt(v ?? 0).toLocaleString('en-US'); } catch (e) { return new Intl.NumberFormat('en-US').format(Number(v) || 0); } };
+        const compact = v => { const n = big(v); for (const [s, x] of [[1000000000n, 'B'], [1000000n, 'M'], [1000n, 'K']]) if (n >= s && n % s === 0n) return `${n / s}${x}`; return fmt(n); };
+        const human = (v, unit) => { const n = big(v); if (unit === 'minutes') return n < 60n ? `${n}m` : `${fmt(n / 60n)}h`; return unit === 'points' ? compact(n) : fmt(n); };
+        const CATS = [
+            ['participation', 'Participation', '#1d6680', '#5fc4e6'], ['tile_mastery', 'Tile Mastery', '#1b6e60', '#5ad6c0'],
+            ['points', 'Points', '#94681a', '#f2c25a'], ['crown', 'Crown', '#a3561f', '#f59a5a'],
+            ['rebellions', 'Rebellions', '#8e2a3a', '#f0738a'], ['beverages', 'Beverages', '#255f8c', '#6fb4ec'],
+            ['collection', 'Collection', '#5f3792', '#b98af0'], ['equipment', 'Equipment', '#44546a', '#9fb2c8'],
+            ['community', 'Community', '#2a7a42', '#6fdc8e'], ['competition', 'Competition', '#923469', '#ef7cbc'],
+            ['oddities', 'Miscellany', '#4f437f', '#a99bea'], ['mastery', 'Mastery', '#7a5c16', '#e8c467'],
+        ];
+        const CAT = Object.fromEntries(CATS.map(([id, label, fill, line]) => [id, { id, label, fill, line }]));
+        const catLabel = id => (CAT[id] && CAT[id].label) || String(id || 'Achievement').replaceAll('_', ' ');
+        const look = id => { const c = CAT[id] || { fill: '#3a4654', line: '#8796a6' }; return `--mi-fill:${c.fill};--mi-line:${c.line};--mi-ink:#f4f6f9`; };
+        const ICON = {
+            overview: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>',
+            all: '<path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/>',
+            participation: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 15-5 16 0"/>',
+            tile_mastery: '<rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><rect x="13" y="13" width="7" height="7" rx="1"/>',
+            points: '<circle cx="12" cy="12" r="8"/><path d="M12 7v10M8 12h8"/>',
+            crown: '<path d="M3 18h18l-1.5-10-4.5 4-3-7-3 7-4.5-4z"/>',
+            rebellions: '<path d="M6 21V4M6 4h11l-2 4 2 4H6"/>',
+            beverages: '<path d="M7 3h10l-1 18H8zM7.5 9h9"/>',
+            collection: '<path d="M4 7h16v13H4zM8 7V4h8v3"/>',
+            equipment: '<circle cx="12" cy="12" r="3.5"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>',
+            community: '<circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2 20c1-4 11-4 12 0M10 20c1-4 11-4 12 0"/>',
+            competition: '<path d="M8 4h8v5a4 4 0 01-8 0zM8 6H4c0 3 2 4 4 4M16 6h4c0 3-2 4-4 4M12 13v4M8 20h8"/>',
+            oddities: '<path d="M9 9a3 3 0 115 2c-1 1-2 1.5-2 3M12 18h.01"/><circle cx="12" cy="12" r="9"/>',
+            mastery: '<path d="M12 2l3 6 6 1-4.5 4 1 6.5L12 16l-5.5 3.5 1-6.5L3 9l6-1z"/><circle cx="12" cy="11" r="2.5"/>',
+        };
+        const icon = id => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id] || ICON.all}</svg>`;
+        const badgeUrl = (raw, mode) => {
+            const u = new URL(raw || '/assets/achievements/badge.svg?v=2&key=family%3Aachievement&category=participation&ap=5', location.origin);
+            u.searchParams.set('v', '2'); u.searchParams.set('mode', mode);
+            return u.origin === location.origin ? u.pathname + u.search : u.href;
+        };
+        const dateLabel = i => i && i.retroactive && !i.historicalTimeKnown ? 'Previously earned'
+            : !(i && i.completedAtMs) ? 'Date unknown' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(Number(i.completedAtMs)));
+        const rewardIcons = r => {
+            const out = [];
+            if (Number(r.gold) > 0) out.push(['/assets/widgets/metric-icons/gold.svg', `${fmt(r.gold)} Gold`]);
+            if (Number(r.diamonds) > 0) out.push(['/assets/widgets/metric-icons/diamonds.svg', `${fmt(r.diamonds)} Diamonds`]);
+            const vip = r.vip ?? r.vipPoints;
+            if (Number(vip) > 0) {
+                const ref = /^VIP_(?:0\d{2}|100)$/.test(String(r.currentVipBadgeRef || '')) ? r.currentVipBadgeRef : 'VIP_000';
+                out.push([`/assets/vip-badges/${ref}.svg`, `+${fmt(vip)} VIP`]);
+            }
+            return out;
+        };
+        const rewardText = r => rewardIcons(r).map(([src, label]) => `<span class="ma-rew"><img src="${src}" alt="">${esc(label)}</span>`).join('') || '<span class="ma-rew">Reward</span>';
+
+        const st = { snap: null, page: 'overview', focus: new Map(), q: '', mode: 'all', type: 'all', sort: 'close', msg: '' };
+        const req = new URLSearchParams(location.search).get('category');
+        if (req && (CAT[req] || req === 'all')) st.page = req;
+
+        async function api(url, opts = {}) {
+            const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json', ...(opts.body ? { 'Content-Type': 'application/json' } : {}) }, ...opts });
+            const body = await res.json().catch(() => null);
+            if (!res.ok || (body && body.ok === false)) { const e = new Error(String((body && (body.error || body.reason)) || 'request_failed_' + res.status)); e.status = res.status; throw e; }
+            return body || {};
+        }
+
+        // One list for everything: single achievements and career lines become the same kind of entry.
+        function entries() {
+            const s = st.snap, out = [];
+            (s.oneOffs || []).forEach((i, n) => out.push({ key: 'o' + n + ':' + (i.familyId || i.title), kind: 'one', i, cat: i.category, title: i.title, done: !!i.unlocked,
+                ap: Number(i.achievementPoints) || 0, at: Number(i.completedAtMs) || 0, pct: onePct(i) }));
+            (s.families || []).forEach((l, n) => {
+                const last = (l.history || []).reduce((a, h) => Math.max(a, Number(h.completedAtMs) || 0), 0);
+                out.push({ key: 'f' + n + ':' + l.familyId, kind: 'line', i: l, cat: l.category || 'mastery', title: l.title, done: !l.nextMilestone,
+                    started: Number(l.completedCount) > 0, ap: l.nextMilestone ? Number(l.nextMilestone.achievementPoints) || 0 : 0, at: last, pct: linePct(l) });
+            });
+            return out;
+        }
+        function onePct(i) {
+            if (i.unlocked) return 1;
+            if (i.secret) return 0;
+            if (i.masteryProgress && Number(i.masteryProgress.target)) return Math.min(1, Number(i.masteryProgress.current) / Number(i.masteryProgress.target));
+            const r = (i.remainingRequirements || []).filter(e => e.current != null && Number(e.target));
+            return r.length ? r.reduce((a, e) => a + Math.min(1, Number(e.current) / Number(e.target)), 0) / r.length : 0;
+        }
+        function linePct(l) {
+            if (!l.nextMilestone) return 1;
+            if (l.familyId === 'mcf.mastery.renaissance') return Math.min(1, Number(l.categoriesMeetingTarget) / Math.max(1, Number(l.requiredCategories)));
+            const cur = Number(l.currentValue) || 0, to = Number(l.nextMilestone.threshold) || 0, from = l.lastMilestone ? Number(l.lastMilestone.threshold) || 0 : 0;
+            return to > from ? Math.max(0, Math.min(1, (cur - from) / (to - from))) : 0;
+        }
+        function catStats() {
+            const m = new Map();
+            for (const e of entries()) {
+                const c = m.get(e.cat) || { done: 0, total: 0, unlocks: 0 };
+                c.total++; if (e.done) c.done++;
+                c.unlocks += e.kind === 'one' ? (e.done ? 1 : 0) : Number(e.i.completedCount) || 0;
+                m.set(e.cat, c);
+            }
+            return m;
+        }
+        function visible() {
+            const q = st.q.trim().toLowerCase();
+            let list = entries().filter(e => (st.page === 'all' || e.cat === st.page)
+                && (st.mode === 'all' || (st.mode === 'done' ? (e.kind === 'line' ? Number(e.i.completedCount) > 0 : e.done) : !e.done))
+                && (st.type === 'all' || (st.type === 'line') === (e.kind === 'line'))
+                && (!q || [e.title, e.i.description, e.cat, catLabel(e.cat)].some(v => String(v || '').toLowerCase().includes(q))));
+            const name = (a, b) => String(a.title).localeCompare(String(b.title));
+            const sorts = {
+                close: (a, b) => (a.done - b.done) || (b.pct - a.pct) || name(a, b),
+                recent: (a, b) => (b.at - a.at) || name(a, b),
+                ap: (a, b) => (b.ap - a.ap) || name(a, b),
+                name,
+            };
+            return list.sort(sorts[st.sort] || sorts.close);
+        }
+
+        // ---- layout ---------------------------------------------------------------------------------
+        root.innerHTML = `<div class="mi ma">
+            <aside class="mi-side" aria-label="Achievements"></aside>
+            <section class="mi-main"><div class="mi-head"></div><div class="mi-body"></div></section>
+            <aside class="mi-detail"></aside></div>`;
+        const $mi = root.querySelector('.mi'), $side = root.querySelector('.mi-side'), $head = root.querySelector('.mi-head'),
+              $body = root.querySelector('.mi-body'), $detail = root.querySelector('.mi-detail');
+
+        function drawSide() {
+            const stats = st.snap ? catStats() : new Map();
+            const all = [...stats.values()].reduce((a, c) => ({ done: a.done + c.done, total: a.total + c.total }), { done: 0, total: 0 });
+            const row = (id, label, c) => `<button type="button" class="inventorySubcategoryButton mi-nav ma-nav" data-page="${id}" aria-current="${st.page === id ? 'page' : 'false'}" style="${look(id)}">
+                ${icon(id)}<span>${esc(label)}</span>${c ? `<i>${c.done}/${c.total}</i><b class="ma-navbar"><b style="width:${c.total ? (c.done * 100 / c.total).toFixed(1) : 0}%"></b></b>` : ''}</button>`;
+            $side.innerHTML = `<div class="mi-group">${row('overview', 'Overview')}${row('all', 'All', st.snap ? all : null)}</div>
+                <div class="mi-group"><h2>Categories</h2>${CATS.map(([id, label]) => row(id, label, stats.get(id) || { done: 0, total: 0 })).join('')}</div>
+                <div class="mi-side__foot"><button type="button" class="mi-link" data-mi="classic">Classic achievements</button></div>`;
+        }
+        $side.addEventListener('click', e => {
+            const b = e.target.closest('[data-page], [data-mi]');
+            if (!b) return;
+            if (b.dataset.mi === 'classic') { const u = new URL(location.href); u.searchParams.set('mlf', 'classic'); location.href = u.href; return; }
+            go(b.dataset.page);
+        });
+        function go(page, focusKey) {
+            st.page = page;
+            if (focusKey) st.focus.set(page, focusKey);
+            const u = new URL(location.href);
+            if (CAT[page] || page === 'all') u.searchParams.set('category', page); else u.searchParams.delete('category');
+            history.replaceState(null, '', u);
+            render();
+        }
+        function render() {
+            drawSide();
+            $mi.toggleAttribute('data-overview', st.page === 'overview');
+            if (st.page === 'overview') return renderOverview();
+            drawHead(); drawGrid(); drawDetail();
+        }
+
+        // ---- head + grid ----------------------------------------------------------------------------
+        function drawHead() {
+            const c = catStats().get(st.page);
+            const title = st.page === 'all' ? 'All achievements' : catLabel(st.page);
+            const chip = (key, v, label) => `<button type="button" class="mi-rar" data-k="${key}" data-v="${v}" aria-pressed="${st[key] === v}">${label}</button>`;
+            $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon(st.page)}</span><h1>${esc(title)}</h1>
+                    ${c ? `<span class="mi-count">${c.done} of ${c.total} complete · ${c.unlocks} unlocks</span>` : ''}</div>
+                <div class="mi-filters">
+                    <input type="search" class="mi-search" placeholder="Search achievements" value="${esc(st.q)}">
+                    <div class="mi-rars">${chip('mode', 'all', 'All')}${chip('mode', 'open', 'In progress')}${chip('mode', 'done', 'Unlocked')}</div>
+                    <div class="mi-rars">${chip('type', 'all', 'Everything')}${chip('type', 'one', 'Badges')}${chip('type', 'line', 'Career lines')}</div>
+                    <label class="mi-sel">Sort <select data-k="sort">${[['close', 'Closest to done'], ['recent', 'Recently unlocked'], ['ap', 'Most AP'], ['name', 'Name']]
+                        .map(([v, l]) => `<option value="${v}" ${st.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                </div>`;
+        }
+        $head.addEventListener('input', e => { if (e.target.matches('.mi-search')) { st.q = e.target.value; drawGrid(); } });
+        $head.addEventListener('change', e => { if (e.target.dataset.k === 'sort') { st.sort = e.target.value; drawGrid(); } });
+        $head.addEventListener('click', e => {
+            const b = e.target.closest('button[data-k]');
+            if (!b) return;
+            st[b.dataset.k] = b.dataset.v;
+            $head.querySelectorAll(`button[data-k="${b.dataset.k}"]`).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+            drawGrid();
+        });
+        const bar = (pct, label) => `<div class="ma-bar" role="progressbar" aria-label="${esc(label || 'Progress')}" aria-valuenow="${Math.round(pct * 100)}" aria-valuemin="0" aria-valuemax="100"><b style="width:${(pct * 100).toFixed(1)}%"></b></div>`;
+        function progressText(e) {
+            const i = e.i;
+            if (e.kind === 'line') {
+                if (!i.nextMilestone) return i.retired ? 'Retired · all kept' : 'Complete';
+                if (i.familyId === 'mcf.mastery.renaissance') return `${fmt(i.categoriesMeetingTarget)} / ${fmt(i.requiredCategories)} categories`;
+                return `${human(i.currentValue, i.unit)} / ${human(i.nextMilestone.threshold, i.unit)}`;
+            }
+            if (i.unlocked) return dateLabel(i);
+            if (i.secret) return 'Secret';
+            if (i.masteryProgress) return `${fmt(i.masteryProgress.current)} / ${fmt(i.masteryProgress.target)}`;
+            const r = i.remainingRequirements || [];
+            return r.length ? `${r.length} requirement${r.length === 1 ? '' : 's'} left` : 'Locked';
+        }
+        function card(e, fk) {
+            const i = e.i, line = e.kind === 'line';
+            const state = e.done ? 'done' : (line ? (e.started ? 'part' : 'open') : 'open');
+            const tier = line ? `<span class="ma-tier">${fmt(i.completedCount || 0)}${i.nextMilestone ? '' : ' ✓'}</span>` : '';
+            return `<article class="mi-card ma-card" data-key="${esc(e.key)}" data-state="${state}" style="${look(e.cat)}" aria-selected="${e.key === fk}" tabindex="0">
+                <div class="ma-badge"><img src="${esc(badgeUrl(i.iconUrl, 'medium'))}" alt="" loading="lazy">${tier}</div>
+                <div class="ma-card__body"><h3>${esc(i.title || 'Achievement')}</h3>
+                    <p>${esc(line ? (i.familyId === 'mcf.mastery.renaissance' ? 'Cross-system career' : `Career line · ${fmt(i.completedCount || 0)} milestone${Number(i.completedCount) === 1 ? '' : 's'}`) : (i.description || ''))}</p></div>
+                ${!e.done && e.pct > 0 ? bar(e.pct, i.title) : ''}
+                <div class="ma-card__foot"><span>${esc(progressText(e))}</span><b>${e.ap ? `${line ? 'next ' : ''}+${fmt(e.ap)} AP` : ''}</b></div>
+            </article>`;
+        }
+        function drawGrid() {
+            const list = visible(), fk = focusKey(list);
+            $body.innerHTML = list.length ? `<div class="mi-grid ma-grid">${list.map(e => card(e, fk)).join('')}</div>` : '<div class="mi-status"><span>Nothing matches these filters.</span></div>';
+        }
+        function focusKey(list) {
+            const want = st.focus.get(st.page);
+            return (want && entries().some(e => e.key === want)) ? want : (list || visible())[0] ? (list || visible())[0].key : '';
+        }
+        $body.addEventListener('click', e => {
+            if (e.target.closest('[data-mi=retry]')) { start(); return; }
+            const slot = e.target.closest('[data-goto]');
+            if (slot) { const [page, key] = slot.dataset.goto.split('|'); go(page, key); return; }
+            const c = e.target.closest('.ma-card');
+            if (!c || st.page === 'overview') return;
+            st.focus.set(st.page, c.dataset.key);
+            $body.querySelectorAll('.ma-card[aria-selected=true]').forEach(x => x.setAttribute('aria-selected', 'false'));
+            c.setAttribute('aria-selected', 'true');
+            drawDetail();
+        });
+        $body.addEventListener('keydown', e => { const c = e.target.closest && e.target.closest('.ma-card'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); c.click(); } });
+
+        // ---- detail -------------------------------------------------------------------------------
+        function drawDetail() {
+            const key = focusKey(), e = entries().find(x => x.key === key);
+            if (!e) { $detail.innerHTML = '<div class="mi-status"><span>Nothing selected.</span></div>'; return; }
+            const i = e.i, line = e.kind === 'line';
+            let body = '';
+            if (!line) {
+                body += `<p class="ma-desc">${esc(i.description || '')}</p>`;
+                body += i.unlocked ? `<div class="ma-status ma-status--done">✓ Unlocked · ${esc(dateLabel(i))}</div>`
+                    : i.secret ? '<div class="ma-status">Secret - revealed once you earn it</div>'
+                    : `<div class="ma-status">${esc(progressText(e))}</div>${e.pct > 0 ? bar(e.pct, i.title) : ''}`;
+                const r = !i.unlocked && !i.secret ? (i.remainingRequirements || []) : [];
+                if (r.length) body += `<h4>Still to do</h4><ul class="ma-reqs">${r.map(x => `<li><span>${esc(x.label)}</span>${x.current != null && x.target != null ? `<b>${fmt(x.current)} / ${fmt(x.target)}</b>` : ''}</li>`).join('')}</ul>`;
+                body += `<div class="ma-ap">+${fmt(i.achievementPoints)} AP</div>`;
+            } else if (i.familyId === 'mcf.mastery.renaissance') {
+                const target = Number(i.targetDepth || (i.nextMilestone && i.nextMilestone.threshold) || 1);
+                body += `<p class="ma-desc">Earn at least ${fmt(target)} achievement${target === 1 ? '' : 's'} in ${fmt(i.requiredCategories)} of 12 categories.</p>
+                    <div class="ma-status">Renaissance depth <b>${fmt(i.currentValue)}</b> · ${fmt(i.categoriesMeetingTarget)} / ${fmt(i.requiredCategories)} categories at depth ${fmt(target)}</div>${bar(e.pct)}`;
+                const cats = (i.categories || []);
+                if (cats.length) body += `<h4>Categories</h4><div class="ma-renai">${cats.map(c => `<button type="button" data-goto="${esc(c.category)}|" class="${c.complete ? 'is-done' : ''}" style="${look(c.category)}">
+                    <span>${esc(catLabel(c.category))}</span><b>${fmt(c.count)} / ${fmt(target)}</b></button>`).join('')}</div>`;
+                body += ladder(i, v => 'Depth ' + fmt(v));
+            } else {
+                body += `<div class="ma-status">Career total <b>${human(i.currentValue, i.unit)}</b>${i.unit === 'minutes' ? ' King time' : ''}</div>`;
+                if (i.nextMilestone) body += bar(e.pct, i.title) + `<div class="ma-sub">${human(Math.max(0, Number(i.currentValue) - (i.lastMilestone ? Number(i.lastMilestone.threshold) : 0)), i.unit)} into this step${i.repeatEvery && i.repeatFrom && big(i.currentValue) >= big(i.repeatFrom) ? ` · repeats every +${human(i.repeatEvery, i.unit)}` : ''}</div>`;
+                else body += `<div class="ma-status ma-status--done">✓ ${i.retired ? 'Retired family - earned milestones are kept' : `All ${fmt(i.completedCount)} milestones earned`}</div>`;
+                body += ladder(i, v => human(v, i.unit));
+                if (Array.isArray(i.opponents)) body += `<h4>Players dethroned <span class="ma-sub">${fmt(i.opponents.length)} / 20</span></h4><ol class="ma-opp">${i.opponents.map(o => `<li>${esc(o.displayName || o.playerId)}</li>`).join('')}</ol>`;
+            }
+            $detail.innerHTML = `<div class="mi-detail__inner ma-detail" style="${look(e.cat)}">
+                <div class="ma-bigbadge" data-state="${e.done ? 'done' : 'open'}"><img src="${esc(badgeUrl(i.iconUrl, 'large'))}" alt=""></div>
+                <h2>${esc(i.title || 'Achievement')}</h2>
+                <button type="button" class="mi-pill ma-catpill" data-goto="${esc(e.cat)}|">${esc(catLabel(e.cat))}</button>
+                ${body}</div>`;
+        }
+        // The steps of a career line: the ones earned (with date), the next one, and that is where it stops -
+        // the server only names the next milestone.
+        function ladder(l, label) {
+            const hist = [...(l.history || [])].sort((a, b) => Number(a.threshold) - Number(b.threshold));
+            const rows = hist.map(h => `<li class="is-done"><img src="${esc(badgeUrl(h.iconUrl || l.iconUrl, 'tiny'))}" alt=""><span><b>${esc(label(h.threshold))}</b><small>+${fmt(h.achievementPoints)} AP · ${esc(dateLabel(h))}</small></span><i>✓</i></li>`);
+            if (l.nextMilestone) rows.push(`<li class="is-next"><span class="ma-dot"></span><span><b>${esc(label(l.nextMilestone.threshold))}</b><small>next · +${fmt(l.nextMilestone.achievementPoints)} AP</small></span><i>${Math.round(linePct(l) * 100)}%</i></li>`);
+            return rows.length ? `<h4>Milestones</h4><ol class="ma-ladder">${rows.reverse().join('')}</ol>` : '';
+        }
+        $detail.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) { const [page, key] = g.dataset.goto.split('|'); go(page, key); } });
+
+        // ---- overview -----------------------------------------------------------------------------
+        function renderOverview() {
+            const s = st.snap, next = s.nextReward || {};
+            const per = 125, prog = Number(next.progress) || 0;
+            $detail.innerHTML = '';
+            $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon('overview')}</span><h1>Achievement Chronicle</h1><span class="mi-count">${esc(s.displayName || '')}</span></div>`;
+            const close = entries().filter(e => !e.done && e.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 8);
+            const cycles = (s.rewardCycles || []).slice(0, 2);
+            const share = new URL(`/players/${encodeURIComponent(String(s.publicAchievementId || ''))}/achievements`, location.origin).href;
+            const recent = (s.recentlyUnlocked || []).slice(0, 6);
+            const stats = catStats();
+            $body.innerHTML = `<div class="ma-over">
+                <section class="ma-stats">
+                    <div class="ma-stat"><span>Achievement Points</span><b>${fmt(s.achievementPoints)} <small>AP</small></b></div>
+                    <div class="ma-stat"><span>Unlocked</span><b>${fmt(s.completionCount)}</b></div>
+                    <div class="ma-stat ma-stat--reward"><span>Next reward at ${fmt(next.boundaryAp)} AP</span><div class="ma-rewline">${rewardText(next)}</div>
+                        ${bar(Math.min(1, prog / per), 'Progress to the next AP reward')}<small>${fmt(prog)} of ${per} AP · ${fmt(Math.max(0, per - prog))} to go</small></div>
+                </section>
+                ${cycles.length ? `<section><h2>AP rewards</h2><div class="ma-cycles">${cycles.map((c, n) => `<div class="ma-cycle"><h3>${n ? 'Next cycle' : 'Current cycle'} <span>${fmt(c.cycleIndex)}</span></h3>
+                    <ol>${(c.milestones || []).map(m => { const isNext = m.boundaryAp === next.boundaryAp;
+                        return `<li class="${m.reached ? 'is-done' : ''}${isNext ? ' is-next' : ''}"><b>${fmt(m.boundaryAp)}</b><span>${rewardText(m)}</span></li>`; }).join('')}</ol></div>`).join('')}</div></section>` : ''}
+                ${close.length ? `<section><h2>Closest to done</h2><div class="mi-grid ma-grid">${close.map(e => card(e, '').replace('<article ', `<article data-goto="${e.cat}|${esc(e.key)}" `)).join('')}</div></section>` : ''}
+                <section><h2>Recently unlocked</h2>${recent.length ? `<div class="ma-recent">${recent.map(r => `<div class="ma-recentrow" style="${look(r.category)}"><img src="${esc(badgeUrl(r.iconUrl, 'tiny'))}" alt=""><span><b>${esc(r.title)}</b><small>${esc(catLabel(r.category))} · ${esc(dateLabel(r))}</small></span><i>+${fmt(r.achievementPoints)} AP</i></div>`).join('')}</div>` : '<p class="mi-note">Your first unlock is waiting.</p>'}</section>
+                <section><h2>Categories</h2><div class="ma-cats">${CATS.map(([id, label]) => { const c = stats.get(id) || { done: 0, total: 0 };
+                    return `<button type="button" class="ma-cat" data-goto="${id}|" style="${look(id)}">${icon(id)}<span>${esc(label)}</span><b>${c.done}/${c.total}</b>${bar(c.total ? c.done / c.total : 0)}</button>`; }).join('')}</div></section>
+                <section><h2>Public Chronicle</h2><div class="ma-share">
+                    <span>${s.visibility === 'public' ? 'Visible to everyone at' : 'Private - your AP and unlocks stay hidden.'}</span>
+                    ${s.visibility === 'public' ? `<a href="${esc(share)}" target="_blank" rel="noopener">${esc(share)}</a><button type="button" class="mi-btn" data-act="copy">Copy link</button>` : ''}
+                    <button type="button" class="mi-btn" data-act="privacy">${s.visibility === 'public' ? 'Make private' : 'Make public'}</button>
+                    ${st.msg ? `<span class="ma-sub">${esc(st.msg)}</span>` : ''}</div></section>
+            </div>`;
+            $body.querySelector('[data-act=copy]') && ($body.querySelector('[data-act=copy]').onclick = async ev => {
+                try { await navigator.clipboard.writeText(share); ev.target.textContent = 'Copied'; } catch (e) { ev.target.textContent = 'Copy failed'; }
+                setTimeout(() => { if (ev.target.isConnected) ev.target.textContent = 'Copy link'; }, 1600);
+            });
+            $body.querySelector('[data-act=privacy]').onclick = async () => {
+                const visibility = s.visibility === 'public' ? 'private' : 'public';
+                try { await api('/api/achievements/privacy', { method: 'POST', body: JSON.stringify({ visibility }) }); s.visibility = visibility; st.msg = ''; }
+                catch (e) { st.msg = 'That did not work: ' + e.message; }
+                renderOverview();
+            };
+        }
+
+        // ---- start ------------------------------------------------------------------------------------
+        async function start() {
+            drawSide();
+            $body.innerHTML = '<div class="mi-status">Reading your Chronicle …</div>';
+            try {
+                st.snap = await api('/api/achievements');
+            } catch (e) {
+                const out = e && (e.status === 401 || e.status === 403);
+                $body.innerHTML = `<div class="mi-status"><b>${out ? 'Sign in to see your achievements' : 'The Chronicle did not answer'}</b><span>${esc(out ? 'Achievements open for a signed-in player.' : e.message)}</span><button type="button" class="mi-btn" data-mi="retry">Try again</button></div>`;
+                return;
+            }
+            render();
+            // As the game's page: the new unlocks have been seen now.
+            const pending = (st.snap.presentation && st.snap.presentation.pending) || [];
+            if (pending.length) api('/api/achievements/ack', { method: 'POST', body: JSON.stringify({ acknowledgeThroughSequence: Math.max(...pending.map(p => Number(p.completionSequence) || 0)) }) }).catch(() => {});
+        }
+        start();
+    }
+
+    // Started like the new inventory, in the achievements page itself (also inside the window frame).
+    // The game's page reads its data once and then tells the server the new unlocks were seen. It
+    // has a review hook of its own (globalThis.__MCF_ACHIEVEMENT_REVIEW_FIXTURE__): given one, it
+    // neither fetches nor acknowledges. It gets an empty one, fails quietly into its own (hidden)
+    // root, and the new page does the fetching and the acknowledging - once. Off with Settings >
+    // Achievements > New achievements page, or for one visit with ?mlf=classic.
+    function achOverhaulBoot() {
+        try {
+            const s = JSON.parse(localStorage.getItem('mcf_overhaul_settings') || '{}');
+            if (s.achOverhaul === false) return;
+        } catch (e) { /* no settings yet: on */ }
+        if (new URLSearchParams(location.search).get('mlf') === 'classic') return;
+        const pw = (typeof unsafeWindow !== 'undefined' && unsafeWindow) || window;
+        try { pw.__MCF_ACHIEVEMENT_REVIEW_FIXTURE__ = pw.JSON.parse('{"mcfoNewPage":true}'); } catch (e) { return; }
+        const html = document.documentElement;
+        html.setAttribute('data-mcfo-newach', '1');
+        document.addEventListener('DOMContentLoaded', () => {
+            const old = document.getElementById('achievement-root');
+            if (!old) return;
+            const main = document.createElement('main');
+            main.id = 'mcfo-ach-root';
+            main.className = 'mcfPageContent mi-root';
+            old.after(main);
+            const st = document.createElement('style');
+            st.id = 'mcfo-newach-css';
+            st.textContent = INV_NEW_CSS + ACH_NEW_CSS;
+            (document.head || html).appendChild(st);
+            const sc = document.createElement('script');
+            sc.textContent = '(' + achOverhaulApp.toString() + ')();';
+            (document.head || html).appendChild(sc);
+        }, { once: true });
+    }
+    const ACH_NEW_CSS = `
+        html[data-mcfo-newach] body { height: 100vh; margin: 0; display: flex; flex-direction: column; overflow: hidden; }
+        html[data-mcfo-newach] body > * { flex: none; }
+        html[data-mcfo-newach] #achievement-root { display: none !important; }
+        html[data-mcfo-newach] #mcfo-ach-root.mi-root { flex: 1 1 auto; min-height: 0; padding: 12px 14px; width: 100%; max-width: none; margin: 0; box-sizing: border-box; display: block; }
+        .ma { --panel-3: #0b111b; }
+        .mi-side .ma-nav.inventorySubcategoryButton { display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 4px; }
+        .ma .ma-nav .ma-navbar { grid-column: 2 / -1; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+        .ma .ma-nav .ma-navbar b { display: block; height: 100%; background: var(--mi-line); }
+        .ma-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+        .ma .ma-card { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 56px 1fr; grid-template-rows: auto auto auto; gap: 6px 10px; padding: 10px; cursor: pointer;
+            border-radius: 10px; color: var(--mi-ink, #f4f6f9); border: 1px solid color-mix(in srgb, var(--mi-line) 35%, transparent);
+            background: linear-gradient(165deg, color-mix(in srgb, var(--mi-fill) 22%, #121a26), #0e1520); transition: border-color .12s, transform .12s; }
+        .ma .ma-card[data-state=done] { border-color: color-mix(in srgb, var(--mi-line) 75%, transparent);
+            background: linear-gradient(170deg, color-mix(in srgb, var(--mi-fill) 92%, #fff 8%), color-mix(in srgb, var(--mi-fill) 70%, #000 30%)); }
+        .ma .ma-card[data-state=part] { border-color: color-mix(in srgb, var(--mi-line) 55%, transparent);
+            background: linear-gradient(165deg, color-mix(in srgb, var(--mi-fill) 48%, #121a26), #0e1520); }
+        .ma .ma-card:hover { border-color: var(--mi-line); transform: translateY(-1px); }
+        .ma .ma-card[aria-selected=true] { outline: 2px solid var(--gold-soft, #ffe4a4); outline-offset: 2px; }
+        .ma .ma-card:focus-visible { outline: 2px solid var(--blue, #60a5fa); outline-offset: 2px; }
+        .ma-badge { position: relative; grid-row: 1 / span 2; width: 56px; height: 56px; }
+        .ma-badge img { width: 100%; height: 100%; object-fit: contain; display: block; }
+        .ma-card[data-state=open] .ma-badge img { filter: grayscale(.85) brightness(.7); opacity: .85; }
+        .ma-tier { position: absolute; right: -4px; bottom: -4px; min-width: 18px; padding: 1px 5px; border-radius: 999px; font: 800 10.5px/1.4 system-ui, sans-serif; text-align: center;
+            background: #0b111b; border: 1px solid var(--mi-line); color: #fff; }
+        .ma-card__body { min-width: 0; }
+        .ma-card h3 { margin: 0 0 3px; font-size: 13px; font-weight: 800; line-height: 1.25; }
+        .ma-card p { margin: 0; font-size: 11.5px; line-height: 1.35; color: color-mix(in srgb, var(--mi-ink) 72%, transparent); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .ma-card .ma-bar { grid-column: 1 / -1; }
+        .ma-card__foot { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: color-mix(in srgb, var(--mi-ink) 75%, transparent); }
+        .ma-card__foot b { color: var(--mi-ink); white-space: nowrap; }
+        .ma-card[data-state=open] .ma-card__foot b { color: var(--mi-line); }
+        .ma-bar { height: 6px; border-radius: 999px; background: rgba(0, 0, 0, .45); overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); }
+        .ma-bar b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--mi-line, #fbbf24), color-mix(in srgb, var(--mi-line, #fbbf24) 70%, #fff)); }
+        /* detail */
+        .ma-detail h4 { margin: 6px 0 0; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted, #9fadc0); }
+        .ma-bigbadge { justify-self: center; width: 150px; height: 150px; display: grid; place-items: center; border-radius: 50%;
+            background: radial-gradient(circle, color-mix(in srgb, var(--mi-fill) 55%, transparent), transparent 70%); }
+        .ma-bigbadge img { width: 128px; height: 128px; object-fit: contain; }
+        .ma-bigbadge[data-state=open] img { filter: grayscale(.8) brightness(.75); }
+        .ma-detail h2 { text-align: center; }
+        .ma-catpill { all: unset; justify-self: center; cursor: pointer; padding: 3px 11px; border-radius: 999px; font-size: 11.5px; font-weight: 800;
+            background: color-mix(in srgb, var(--mi-fill) 70%, transparent); border: 1px solid var(--mi-line); color: #fff; }
+        .ma-desc { margin: 0; font-size: 13px; line-height: 1.45; text-align: center; color: var(--ink, #eef4fb); }
+        .ma-status { padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, .3); border: 1px solid rgba(255, 255, 255, .08); font-size: 12.5px; text-align: center; }
+        .ma-status b { color: var(--mi-line); }
+        .ma-status--done { border-color: color-mix(in srgb, var(--green, #4ade80) 55%, transparent); color: var(--green, #4ade80); }
+        .ma-sub { font-size: 11.5px; color: var(--muted, #9fadc0); text-align: center; }
+        .ma-ap { justify-self: center; font: 800 15px/1 system-ui, sans-serif; color: var(--gold, #fbbf24); padding: 6px 12px; border-radius: 8px; background: rgba(251, 191, 36, .1); border: 1px solid rgba(251, 191, 36, .35); }
+        .ma-reqs, .ma-ladder, .ma-opp { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+        .ma-reqs li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 9px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 12px; }
+        .ma-reqs b { color: var(--mi-line); white-space: nowrap; }
+        .ma-ladder li { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 8px; background: rgba(0, 0, 0, .22); border: 1px solid transparent; }
+        .ma-ladder li img { width: 26px; height: 26px; object-fit: contain; }
+        .ma-ladder li span { display: grid; }
+        .ma-ladder li b { font-size: 12.5px; }
+        .ma-ladder li small { font-size: 11px; color: var(--muted, #9fadc0); }
+        .ma-ladder li i { font-style: normal; font-weight: 800; font-size: 12px; color: var(--green, #4ade80); }
+        .ma-ladder li.is-next { border-color: color-mix(in srgb, var(--mi-line) 70%, transparent); background: color-mix(in srgb, var(--mi-fill) 25%, transparent); }
+        .ma-ladder li.is-next i { color: var(--mi-line); }
+        .ma-dot { width: 14px; height: 14px; margin: 0 6px; border-radius: 50%; border: 2px solid var(--mi-line); box-sizing: border-box; }
+        .ma-opp { grid-template-columns: 1fr 1fr; font-size: 12px; list-style: decimal inside; }
+        .ma-renai { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+        .ma-renai button { all: unset; cursor: pointer; display: flex; justify-content: space-between; gap: 6px; padding: 6px 8px; border-radius: 7px; font-size: 11.5px;
+            background: rgba(0, 0, 0, .28); border: 1px solid color-mix(in srgb, var(--mi-line) 40%, transparent); }
+        .ma-renai button.is-done { background: color-mix(in srgb, var(--mi-fill) 55%, transparent); }
+        .ma-renai b { color: var(--mi-line); }
+        .ma-renai button.is-done b { color: #fff; }
+        /* overview */
+        .ma-over { display: grid; gap: 20px; }
+        .ma-over h2 { margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted, #9fadc0); }
+        .ma-stats { display: grid; grid-template-columns: minmax(150px, .7fr) minmax(130px, .6fr) minmax(260px, 1.6fr); gap: 10px; }
+        .ma-stat { padding: 14px; border-radius: 12px; border: 1px solid var(--line, #ffffff20); background: rgba(0, 0, 0, .22); display: grid; gap: 6px; align-content: start; }
+        .ma-stat > span { font-size: 11.5px; color: var(--muted, #9fadc0); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+        .ma-stat > b { font: 800 30px/1 system-ui, sans-serif; color: var(--gold, #fbbf24); }
+        .ma-stat > b small { font-size: 14px; }
+        .ma-stat--reward { --mi-line: #fbbf24; }
+        .ma-stat small { font-size: 11.5px; color: var(--muted, #9fadc0); }
+        .ma-rewline { display: flex; gap: 10px; flex-wrap: wrap; }
+        .ma-rew { display: inline-flex; align-items: center; gap: 5px; font-weight: 800; font-size: 13px; }
+        .ma-rew img { width: 18px; height: 18px; }
+        .ma-cycles { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+        .ma-cycle { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line, #ffffff20); background: rgba(0, 0, 0, .18); }
+        .ma-cycle h3 { margin: 0 0 8px; font-size: 12.5px; }
+        .ma-cycle h3 span { color: var(--muted, #9fadc0); font-weight: 600; }
+        .ma-cycle ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+        .ma-cycle li { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 7px; font-size: 12px; }
+        .ma-cycle li b { color: var(--muted, #9fadc0); }
+        .ma-cycle li span { display: flex; gap: 8px; flex-wrap: wrap; }
+        .ma-cycle li .ma-rew { font-size: 12px; font-weight: 700; }
+        .ma-cycle li.is-done { opacity: .5; }
+        .ma-cycle li.is-done b::after { content: ' \\2713'; color: var(--green, #4ade80); }
+        .ma-cycle li.is-next { background: rgba(251, 191, 36, .12); border: 1px solid rgba(251, 191, 36, .4); }
+        .ma-cycle li.is-next b { color: var(--gold, #fbbf24); }
+        .ma-recent { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+        .ma-recentrow { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 10px;
+            background: linear-gradient(165deg, color-mix(in srgb, var(--mi-fill) 55%, #121a26), #0e1520); border: 1px solid color-mix(in srgb, var(--mi-line) 45%, transparent); }
+        .ma-recentrow img { width: 34px; height: 34px; object-fit: contain; }
+        .ma-recentrow span { display: grid; min-width: 0; }
+        .ma-recentrow b { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ma-recentrow small { font-size: 11px; color: var(--muted, #9fadc0); }
+        .ma-recentrow i { font-style: normal; font-weight: 800; font-size: 12px; color: var(--gold, #fbbf24); }
+        .ma-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+        .ma-cat { all: unset; cursor: pointer; display: grid; grid-template-columns: 20px 1fr auto; align-items: center; gap: 6px 9px; padding: 10px 12px; border-radius: 10px;
+            background: linear-gradient(165deg, color-mix(in srgb, var(--mi-fill) 40%, #121a26), #0e1520); border: 1px solid color-mix(in srgb, var(--mi-line) 40%, transparent); }
+        .ma-cat:hover { border-color: var(--mi-line); }
+        .ma-cat svg { width: 18px; height: 18px; fill: none; stroke: var(--mi-line); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+        .ma-cat span { font-size: 12.5px; font-weight: 700; }
+        .ma-cat b { font-size: 12px; color: var(--mi-line); }
+        .ma-cat .ma-bar { grid-column: 1 / -1; }
+        .ma-share { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line, #ffffff20); background: rgba(0, 0, 0, .18); font-size: 12.5px; }
+        .ma-share a { color: var(--cyan, #67e8f9); word-break: break-all; }
+        .ma .mi-grid [data-goto] { cursor: pointer; }
+        @media (max-width: 1180px) { .ma-stats { grid-template-columns: 1fr 1fr; } .ma-stat--reward { grid-column: 1 / -1; } }
+    `;
+
+    if (/^\/achievements\/?$/.test(location.pathname)) {
+        try { achOverhaulBoot(); } catch (e) { console.warn('[MarbleLuceFall] new achievements page unavailable:', e.message); }
+    }
     if (/^\/inventory\/?$/.test(location.pathname)) {
         try { invListCache(); } catch (e) { console.warn('[MarbleLuceFall] crown list cache unavailable:', e.message); }
         try { invRarityTap(); } catch (e) { console.warn('[MarbleLuceFall] rarity tiles unavailable:', e.message); }
@@ -1715,6 +2209,10 @@
               hint: 'The inventory as a gallery: categories on the left, search, rarity, Equipped and In pool filters above the cards, a large preview with Equip and Pool on the right, and an Overview of everything you wear. Crowns show on your profile picture, as in the shop. It uses the game\'s own lists, actions and pictures. "Classic inventory" at the bottom of its sidebar opens the game\'s inventory for one visit. Takes effect the next time the inventory opens.' },
             { key: 'invRarityGroups', label: 'Rarities first (classic inventory)',
               hint: 'In the game\'s own inventory: a category opens on one tile per rarity, with how many items you have in it, and whether your equipped item and pool items are among them. Items without a rarity (No Treatment, No Crown, Basic) share the Default tile. Click a tile for its items, "Rarities" goes back. The tiles use the game\'s own rarity filter.' },
+        ]},
+        { title: 'Achievements', blurb: 'A new achievements page over the game\'s.', items: [
+            { key: 'achOverhaul', label: 'New achievements page',
+              hint: 'Built like the new inventory: categories on the left with how far you are in each, an Overview on top (AP, next reward, AP reward cycles, closest to done, recently unlocked, Public Chronicle), search, In progress / Unlocked, Badges / Career lines and sorting above the cards, everything about the picked achievement on the right - for career lines all milestones earned and the next one. "Classic achievements" at the bottom of its sidebar opens the game\'s page for one visit. Takes effect the next time the page opens.' },
         ]},
         { title: 'Footer', blurb: 'Season line, build, and which buttons stay.', items: [
             { key: 'footerMeta', label: 'Season, episode and build',
@@ -13393,12 +13891,18 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.57.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.58';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.58', date: '2026-10-08', items: [
+            'A new achievements page, built like the new inventory: categories down the left, each with how many you have done and a small bar, and an Overview on top - Achievement Points, the next reward with its progress, the current and next AP reward cycle, the achievements closest to done, recently unlocked, and your Public Chronicle (copy link, public / private).',
+            'Each category is a grid of cards: unlocked ones in the colour of their category, open ones dark with a progress bar. Search, All / In progress / Unlocked, Badges / Career lines, and sorting by closest to done, recently unlocked, most AP or name.',
+            'The right column shows everything about the picked achievement: description, progress, what is still to do, AP - and for career lines every milestone earned (with date) and the next one.',
+            'The game\'s page is one click away: "Classic achievements" at the bottom of the sidebar, or switch the new one off in Settings \u203a Achievements.',
+        ] },
         { v: '6.57.2', date: '2026-10-08', items: [
             'New inventory: one look for every category - the whole card in the colour of its rarity (Exclusive white, with dark text), the picture on one neutral ground, the large preview framed in the same colour. The same for the Overview slots.',
             'Royal Titles and Default Tolls show their rarity again: coloured cards, rarity chips and the rarity under the name.',
@@ -13836,6 +14340,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 'The header cards are signposts: Gold opens the Shop, Diamonds the packages, the tileset card the upcoming tilesets.',
                 'Pages open as windows over the running game. Drag the title bar to move one, the corner to resize it, – parks it in the taskbar, Esc closes the top one.',
                 'The new inventory: categories on the left (Overview on top shows everything you wear), search, rarity, Equipped and In pool above the cards, a large preview with Equip and Pool on the right; double-click a card to equip it. "Classic inventory" at the bottom of the sidebar opens the game\'s own. Settings \u203a Inventory \u203a New inventory',
+                'The new achievements page: categories on the left with how far you are in each, an Overview on top (AP, next reward, AP reward cycles, closest to done, recently unlocked, Public Chronicle), filters and sorting above the cards, the picked achievement on the right - career lines with all their milestones. "Classic achievements" at the bottom of the sidebar opens the game\'s page. Settings \u203a Achievements \u203a New achievements page',
                 'In the classic inventory a category opens on one tile per rarity (items without one share the Default tile), with how many items you have in it and whether your equipped item is among them; click a tile for its items, \u2039 Rarities goes back. Settings \u203a Inventory \u203a Rarities first',
             ] },
             { title: 'Ticket rail', items: [
