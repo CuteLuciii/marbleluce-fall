@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.58
+// @version      6.58.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes, pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, new inventory and achievements pages, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -1230,7 +1230,8 @@
         function visible() {
             const q = st.q.trim().toLowerCase();
             let list = entries().filter(e => (st.page === 'all' || e.cat === st.page)
-                && (st.mode === 'all' || (st.mode === 'done' ? (e.kind === 'line' ? Number(e.i.completedCount) > 0 : e.done) : !e.done))
+                // Unlocked: anything earned, a career line from its first milestone on. Completed: nothing left to earn.
+                && (st.mode === 'all' || (st.mode === 'done' ? (e.kind === 'line' ? Number(e.i.completedCount) > 0 : e.done) : st.mode === 'complete' ? e.done : !e.done))
                 && (st.type === 'all' || (st.type === 'line') === (e.kind === 'line'))
                 && (!q || [e.title, e.i.description, e.cat, catLabel(e.cat)].some(v => String(v || '').toLowerCase().includes(q))));
             const name = (a, b) => String(a.title).localeCompare(String(b.title));
@@ -1290,7 +1291,7 @@
                     ${c ? `<span class="mi-count">${c.done} of ${c.total} complete · ${c.unlocks} unlocks</span>` : ''}</div>
                 <div class="mi-filters">
                     <input type="search" class="mi-search" placeholder="Search achievements" value="${esc(st.q)}">
-                    <div class="mi-rars">${chip('mode', 'all', 'All')}${chip('mode', 'open', 'In progress')}${chip('mode', 'done', 'Unlocked')}</div>
+                    <div class="mi-rars">${chip('mode', 'all', 'All')}${chip('mode', 'open', 'In progress')}${chip('mode', 'done', 'Unlocked')}${chip('mode', 'complete', 'Completed')}</div>
                     <div class="mi-rars">${chip('type', 'all', 'Everything')}${chip('type', 'one', 'Badges')}${chip('type', 'line', 'Career lines')}</div>
                     <label class="mi-sel">Sort <select data-k="sort">${[['close', 'Closest to done'], ['recent', 'Recently unlocked'], ['ap', 'Most AP'], ['name', 'Name']]
                         .map(([v, l]) => `<option value="${v}" ${st.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -13891,12 +13892,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.58';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.58.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.58.1', date: '2026-10-08', items: [
+            'Achievements: a Completed filter beside In progress and Unlocked - only what is fully done (unlocked achievements and career lines with no milestone left). Unlocked still shows career lines from their first milestone on.',
+        ] },
         { v: '6.58', date: '2026-10-08', items: [
             'A new achievements page, built like the new inventory: categories down the left, each with how many you have done and a small bar, and an Overview on top - Achievement Points, the next reward with its progress, the current and next AP reward cycle, the achievements closest to done, recently unlocked, and your Public Chronicle (copy link, public / private).',
             'Each category is a grid of cards: unlocked ones in the colour of their category, open ones dark with a progress bar. Search, All / In progress / Unlocked, Badges / Career lines, and sorting by closest to done, recently unlocked, most AP or name.',
