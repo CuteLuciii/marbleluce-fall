@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.55
+// @version      6.55.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -10476,11 +10476,10 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     // stops there. The game's three controls are only hidden, never removed; renderKingTollControls
     // sets their properties but never rebuilds them.
     //
-    // The upper end is per player: higher tolls are unlocked one by one, and the game tells each
-    // King their own limit in /api/king/toll-capability (toll.maxBaseToll, the same answer the
-    // game's buttons are clamped to). The field asks for it while the toll controls are on screen
-    // and never shows more than that, so nobody sees a value they have not unlocked. 17 is the
-    // game's own fallback (KING_TOLL_MAX in app.js) until the answer is in.
+    // The upper end comes from the game: /api/king/toll-capability (toll.maxBaseToll), the same
+    // answer the game's own buttons are clamped to. The field asks for it while the toll controls
+    // are on screen and never offers more than that. 17 is the game's own fallback
+    // (KING_TOLL_MAX in app.js) until the answer is in.
     const TOLL_FALLBACK_MAX = 17;
     const TOLL_CAP_EVERY_MS = 60000;   // the server caches the answer for 60 s (cacheTtlMs)
     const TOLL_OK_SHOW_MS = 2500;
@@ -12391,14 +12390,17 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.55';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.55.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.55.1', date: '2026-10-08', items: [
+            'Clearer wording in the notes of 6.55.',
+        ] },
         { v: '6.55', date: '2026-10-08', items: [
-            'Toll field on the throne: the upper end now follows the game\'s own toll limit for your account instead of a fixed 17. Field, slider and the number beside them show your limit.',
+            'Toll field on the throne: field, slider and the number beside them now take their upper end from the game, the same limit the game\'s own Reduce and Increase buttons use.',
         ] },
         { v: '6.54.2', date: '2026-10-07', items: [
             'Inventory, Rebellion Auras: the aura pictures stay inside their card again. If the window was minimised or hidden while the game drew them, an aura could run over its name and hide the Equip and Pool buttons.',
