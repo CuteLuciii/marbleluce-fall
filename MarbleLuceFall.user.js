@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.58.1
+// @version      6.59
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes, pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, new inventory and achievements pages, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -253,6 +253,9 @@
             king_chat_bubble_style: '<path d="M4 6h16v10H9l-5 4zM8 9l2 2 2-3 2 3 2-2"/>',
         };
         const icon = id => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id] || ''}</svg>`;
+        // Fetch everything again (6.59): the lists are kept while the page is open, so a crown bought
+        // in the shop meanwhile only shows up after this.
+        const RELOAD = '<button type="button" class="mi-btn mi-btn--quiet mi-reload" data-mi="reload" title="Load your inventory again">\u21bb Reload</button>';
         // Every page: where its list comes from and how it is equipped.
         const MARBLE = (id, label, endpoint, metaKey, mod, fn, singular, plural, defaultName, extra = {}) =>
             ({ id, label, group: 'Marble', kind: 'marble', url: '/api/inventory/' + endpoint, endpoint, metaKey, mod, fn, singular, plural, defaultName, ...extra });
@@ -580,7 +583,7 @@
             const sorts = p.kind === 'toll' ? '' : `<label class="mi-sel">Sort <select data-f="sort">
                 ${[['rarity', 'Rarest first'], ['rarity-asc', 'Commonest first'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${f.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
             $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon(p.id)}</span><h1>${esc(p.plural || p.label)}</h1><span class="mi-count">${owned} owned</span>
-                    <div class="mi-ctl">${ctl}</div></div>
+                    <div class="mi-ctl">${ctl}${RELOAD}</div></div>
                 <div class="mi-filters">
                     <input type="search" class="mi-search" data-f="q" placeholder="Search ${esc((p.plural || p.label).toLowerCase())}" value="${esc(f.q)}">
                     ${rars.length ? `<div class="mi-rars"><button type="button" class="mi-rar" data-rar="" aria-pressed="${!f.rarity}">All <i>${m.items.length}</i></button>${rars.map(r =>
@@ -603,6 +606,7 @@
         $head.addEventListener('click', e => {
             const b = e.target.closest('button');
             if (!b) return;
+            if (b.dataset.mi === 'reload') { st.data.clear(); render(); return; }
             const f = filterOf(st.page);
             if (b.hasAttribute('data-rar')) { f.rarity = b.dataset.rar; drawHead(); drawGrid(); return; }
             if (b.dataset.f === 'eq' || b.dataset.f === 'pool') { f[b.dataset.f] = !f[b.dataset.f]; drawHead(); drawGrid(); return; }
@@ -818,7 +822,7 @@
         ];
         async function renderOverview(gen) {
             $detail.innerHTML = '';
-            $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon('overview')}</span><h1>What you wear</h1><span class="mi-count">Click a slot to change it</span></div>`;
+            $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon('overview')}</span><h1>What you wear</h1><span class="mi-count">Click a slot to change it</span><div class="mi-ctl">${RELOAD}</div></div>`;
             const groups = [['King', SLOTS.slice(0, 4)], ['Marble', SLOTS.slice(4, 8)], ['Chat', SLOTS.slice(8)]];
             $body.innerHTML = `<div class="mi-over">${groups.map(([g, slots]) => `<section><h2>${g}</h2><div class="mi-over__grid">${slots.map(([id, label]) =>
                 `<button type="button" class="mi-slot" data-slot="${id}"><span class="mi-slot__label">${icon(id)}${esc(label)}</span><div class="mi-slot__pic"><div class="mi-status"><span>…</span></div></div><b class="mi-slot__name"></b><span class="mi-slot__sub"></span></button>`).join('')}</div></section>`).join('')}</div>`;
@@ -983,6 +987,8 @@
         .mi-btn { border-radius: 8px; padding: 6px 11px; }
         .mi-btn[aria-pressed=true] { border-color: color-mix(in srgb, var(--gold, #d6aa48) 70%, transparent); background: color-mix(in srgb, var(--gold, #d6aa48) 18%, transparent); color: var(--gold-soft, #ffe4a4); }
         .mi-btn--quiet { background: transparent; }
+        .mi-title > .mi-reload { margin-left: auto; }
+        .mi-reload.is-busy { opacity: .6; }
         .mi-btn:disabled { opacity: .55; cursor: default; }
         .mi-btn--main { background: color-mix(in srgb, var(--gold, #d6aa48) 22%, transparent); border-color: color-mix(in srgb, var(--gold, #d6aa48) 65%, transparent); color: var(--gold-soft, #ffe4a4); }
         .mi-btn--on { opacity: 1 !important; border-color: color-mix(in srgb, var(--green, #7ec98f) 65%, transparent); color: var(--green, #7ec98f); }
@@ -1161,6 +1167,7 @@
             mastery: '<path d="M12 2l3 6 6 1-4.5 4 1 6.5L12 16l-5.5 3.5 1-6.5L3 9l6-1z"/><circle cx="12" cy="11" r="2.5"/>',
         };
         const icon = id => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[id] || ICON.all}</svg>`;
+        const RELOAD = '<button type="button" class="mi-btn mi-btn--quiet mi-reload" data-mi="reload" title="Load your achievements again">\u21bb Reload</button>';
         const badgeUrl = (raw, mode) => {
             const u = new URL(raw || '/assets/achievements/badge.svg?v=2&key=family%3Aachievement&category=participation&ap=5', location.origin);
             u.searchParams.set('v', '2'); u.searchParams.set('mode', mode);
@@ -1288,7 +1295,7 @@
             const title = st.page === 'all' ? 'All achievements' : catLabel(st.page);
             const chip = (key, v, label) => `<button type="button" class="mi-rar" data-k="${key}" data-v="${v}" aria-pressed="${st[key] === v}">${label}</button>`;
             $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon(st.page)}</span><h1>${esc(title)}</h1>
-                    ${c ? `<span class="mi-count">${c.done} of ${c.total} complete · ${c.unlocks} unlocks</span>` : ''}</div>
+                    ${c ? `<span class="mi-count">${c.done} of ${c.total} complete · ${c.unlocks} unlocks</span>` : ''}${RELOAD}</div>
                 <div class="mi-filters">
                     <input type="search" class="mi-search" placeholder="Search achievements" value="${esc(st.q)}">
                     <div class="mi-rars">${chip('mode', 'all', 'All')}${chip('mode', 'open', 'In progress')}${chip('mode', 'done', 'Unlocked')}${chip('mode', 'complete', 'Completed')}</div>
@@ -1300,6 +1307,7 @@
         $head.addEventListener('input', e => { if (e.target.matches('.mi-search')) { st.q = e.target.value; drawGrid(); } });
         $head.addEventListener('change', e => { if (e.target.dataset.k === 'sort') { st.sort = e.target.value; drawGrid(); } });
         $head.addEventListener('click', e => {
+            if (e.target.closest('[data-mi=reload]')) { start(true); return; }
             const b = e.target.closest('button[data-k]');
             if (!b) return;
             st[b.dataset.k] = b.dataset.v;
@@ -1403,7 +1411,7 @@
             const s = st.snap, next = s.nextReward || {};
             const per = 125, prog = Number(next.progress) || 0;
             $detail.innerHTML = '';
-            $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon('overview')}</span><h1>Achievement Chronicle</h1><span class="mi-count">${esc(s.displayName || '')}</span></div>`;
+            $head.innerHTML = `<div class="mi-title"><span class="mi-title__icon">${icon('overview')}</span><h1>Achievement Chronicle</h1><span class="mi-count">${esc(s.displayName || '')}</span>${RELOAD}</div>`;
             const close = entries().filter(e => !e.done && e.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 8);
             const cycles = (s.rewardCycles || []).slice(0, 2);
             const share = new URL(`/players/${encodeURIComponent(String(s.publicAchievementId || ''))}/achievements`, location.origin).href;
@@ -1442,9 +1450,11 @@
         }
 
         // ---- start ------------------------------------------------------------------------------------
-        async function start() {
-            drawSide();
-            $body.innerHTML = '<div class="mi-status">Reading your Chronicle …</div>';
+        // again: the reload button - the data is fetched anew, the page and the place in it stay.
+        async function start(again) {
+            const btn = $head.querySelector('[data-mi=reload]');
+            if (again && btn) { btn.disabled = true; btn.classList.add('is-busy'); }
+            if (!again) { drawSide(); $body.innerHTML = '<div class="mi-status">Reading your Chronicle …</div>'; }
             try {
                 st.snap = await api('/api/achievements');
             } catch (e) {
@@ -3752,6 +3762,16 @@
                 linear-gradient(135deg, transparent 46%, #4a6479 46%, #4a6479 54%, transparent 54%),
                 linear-gradient(135deg, transparent 70%, #4a6479 70%, #4a6479 78%, transparent 78%);
         }
+        /* The other edges and corners (6.59): invisible strips just inside the border, above the page. */
+        .mcfo-win__edge { position: absolute; z-index: 4; }
+        .mcfo-win__edge[data-edge=n]  { top: 0; left: 10px; right: 10px; height: 5px; cursor: ns-resize; }
+        .mcfo-win__edge[data-edge=s]  { bottom: 0; left: 10px; right: 18px; height: 6px; cursor: ns-resize; }
+        .mcfo-win__edge[data-edge=e]  { right: 0; top: 10px; bottom: 18px; width: 6px; cursor: ew-resize; }
+        .mcfo-win__edge[data-edge=w]  { left: 0; top: 10px; bottom: 10px; width: 6px; cursor: ew-resize; }
+        .mcfo-win__edge[data-edge=nw] { left: 0; top: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+        .mcfo-win__edge[data-edge=ne] { right: 0; top: 0; width: 8px; height: 8px; cursor: nesw-resize; }
+        .mcfo-win__edge[data-edge=sw] { left: 0; bottom: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+        .mcfo-win__grip { z-index: 4; }
         .mcfo-loading {
             position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
             color: #6b8299; font-size: 1.1em; pointer-events: none;
@@ -8732,7 +8752,8 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             + '<button type="button" class="mcfo-win__btn" data-mcfo-win="close" title="Close (Esc)">&#10005;</button>'
             + '</div>'
             + '<div class="mcfo-win__body"></div>'
-            + '<div class="mcfo-win__grip" title="Resize"></div>';
+            + '<div class="mcfo-win__grip" data-edge="se" title="Resize"></div>'
+            + ['n', 's', 'e', 'w', 'ne', 'nw', 'sw'].map(e => `<div class="mcfo-win__edge" data-edge="${e}"></div>`).join('');
         el.querySelector('.mcfo-win__title').textContent = title;
         desk.appendChild(el);
 
@@ -9070,28 +9091,43 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         head.addEventListener('pointercancel', stop);
     }
 
+    // Every edge and corner resizes (6.59), not only the grip bottom right. The opposite edge stays
+    // where it is: dragging the left edge moves the window's left side, the right one holds.
     function resizeWindow(path, w) {
-        const grip = w.el.querySelector('.mcfo-win__grip');
-        let zieht = false, x0 = 0, y0 = 0, b0 = 0, h0 = 0;
-        grip.addEventListener('pointerdown', e => {
-            if (e.button !== 0) return;
-            const r = w.el.getBoundingClientRect();
-            x0 = e.clientX; y0 = e.clientY; b0 = r.width; h0 = r.height;
-            zieht = true; grip.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
-        });
-        grip.addEventListener('pointermove', e => {
-            if (!zieht) return;
-            clampWindow(w.el, parseInt(w.el.style.left, 10) || 0, parseInt(w.el.style.top, 10) || 0,
-                        b0 + (e.clientX - x0), h0 + (e.clientY - y0));
-        });
-        const stop = e => {
-            if (!zieht) return;
-            zieht = false;
-            try { grip.releasePointerCapture(e.pointerId); } catch (err) {}
-            saveWinState(path, { width: parseInt(w.el.style.width, 10), height: parseInt(w.el.style.height, 10) });
-        };
-        grip.addEventListener('pointerup', stop);
-        grip.addEventListener('pointercancel', stop);
+        for (const h of w.el.querySelectorAll('[data-edge]')) {
+            let zieht = false, x0 = 0, y0 = 0, r0 = null;
+            h.addEventListener('pointerdown', e => {
+                if (e.button !== 0) return;
+                // The window's own numbers, not getBoundingClientRect: that one counts the border too,
+                // and every drag made the window a few pixels larger (the old grip did that as well).
+                const st = w.el.style, l = parseInt(st.left, 10) || 0, t = parseInt(st.top, 10) || 0,
+                      wd = parseInt(st.width, 10) || w.el.offsetWidth, ht = parseInt(st.height, 10) || w.el.offsetHeight;
+                r0 = { left: l, top: t, width: wd, height: ht, right: l + wd, bottom: t + ht };
+                x0 = e.clientX; y0 = e.clientY;
+                zieht = true; h.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+            });
+            h.addEventListener('pointermove', e => {
+                if (!zieht) return;
+                const edge = h.dataset.edge, dx = e.clientX - x0, dy = e.clientY - y0;
+                let left = r0.left, top = r0.top, wd = r0.width, ht = r0.height;
+                if (edge.includes('e')) wd = r0.width + dx;
+                if (edge.includes('s')) ht = r0.height + dy;
+                if (edge.includes('w')) { wd = Math.max(WIN_MIN_W, r0.width - dx); left = r0.right - wd; }
+                if (edge.includes('n')) { ht = Math.max(WIN_MIN_H, r0.height - dy); top = r0.bottom - ht; }
+                if (left < 0) { wd += left; left = 0; }
+                if (top < 0) { ht += top; top = 0; }
+                clampWindow(w.el, left, top, wd, ht);
+            });
+            const stop = e => {
+                if (!zieht) return;
+                zieht = false;
+                try { h.releasePointerCapture(e.pointerId); } catch (err) {}
+                saveWinState(path, { left: parseInt(w.el.style.left, 10), top: parseInt(w.el.style.top, 10),
+                                     width: parseInt(w.el.style.width, 10), height: parseInt(w.el.style.height, 10) });
+            };
+            h.addEventListener('pointerup', stop);
+            h.addEventListener('pointercancel', stop);
+        }
     }
 
     // A window that no longer fits a shrunken viewport is pulled back into view.
@@ -13892,12 +13928,16 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.58.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.59';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.59', date: '2026-10-08', items: [
+            'Windows can be resized at every edge and corner now, not only at the grip bottom right.',
+            'Achievements and the new inventory have a Reload button in their header: the data is loaded again, and you stay on the page and the category you are on.',
+        ] },
         { v: '6.58.1', date: '2026-10-08', items: [
             'Achievements: a Completed filter beside In progress and Unlocked - only what is fully done (unlocked achievements and career lines with no milestone left). Unlocked still shows career lines from their first milestone on.',
         ] },
@@ -14342,7 +14382,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             { title: 'Getting around', items: [
                 'Click your name for Profile, Dailies, Inventory, Achievements, Leaderboards, Settings, How to and Changelog. Logged out, the same menu offers Log in with Twitch.',
                 'The header cards are signposts: Gold opens the Shop, Diamonds the packages, the tileset card the upcoming tilesets.',
-                'Pages open as windows over the running game. Drag the title bar to move one, the corner to resize it, – parks it in the taskbar, Esc closes the top one.',
+                'Pages open as windows over the running game. Drag the title bar to move one, any edge or corner to resize it, – parks it in the taskbar, Esc closes the top one.',
                 'The new inventory: categories on the left (Overview on top shows everything you wear), search, rarity, Equipped and In pool above the cards, a large preview with Equip and Pool on the right; double-click a card to equip it. "Classic inventory" at the bottom of the sidebar opens the game\'s own. Settings \u203a Inventory \u203a New inventory',
                 'The new achievements page: categories on the left with how far you are in each, an Overview on top (AP, next reward, AP reward cycles, closest to done, recently unlocked, Public Chronicle), filters and sorting above the cards, the picked achievement on the right - career lines with all their milestones. "Classic achievements" at the bottom of the sidebar opens the game\'s page. Settings \u203a Achievements \u203a New achievements page',
                 'In the classic inventory a category opens on one tile per rarity (items without one share the Default tile), with how many items you have in it and whether your equipped item is among them; click a tile for its items, \u2039 Rarities goes back. Settings \u203a Inventory \u203a Rarities first',
