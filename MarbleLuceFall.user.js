@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.56
+// @version      6.56.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -121,24 +121,17 @@
             }).catch(() => live());
         };
     }
-    // Rarities first (6.56) - the part inside the inventory frame. In 12e every category first
-    // shows one tile per rarity, and a click on a tile shows that rarity's items. Crowns and chat
-    // put all their cards on the page, so 12e only hides the others there. Borders, trails, auras,
-    // indicators and wreaths do not: the game's module cuts 12 cards at a time out of the whole
-    // list (items.slice(page * 12, ...)), so hiding cards could only ever sort one page. For
-    // those the list itself is cut here, to the rarity 12e picked, and the game pages through
-    // what is left. The equipped item stays in the list under a rarity of its own (sorted last,
-    // its card hidden by 12e): the game names it as "Equipped ..." and opens it in the preview,
-    // which it can only do while it is in the list. Equip and pool work item by item
-    // (selected / random-pool/<id>), so an item that is cut away is never touched.
-    //
-    // Both sides talk through attributes on <html>, the one thing the frame's page and the
-    // script in the top window share: data-mcfo-rarpick ("page|rarity", set by 12e) and
-    // data-mcfo-rarinfo (the counts per rarity, written here from the whole list).
+    // Rarities first (6.56, reworked 6.56.1) - the part inside the inventory frame. In 12e every
+    // category opens on one tile per rarity; a click on a tile switches the game's own rarity
+    // filter (since game build 16553fb, inventoryFilters.js), which also pages through that
+    // rarity alone. The tiles need numbers the page does not show - borders, trails, auras,
+    // indicators and wreaths draw only 12 cards at a time - so they are counted here, from the
+    // whole list as it comes from the server, and handed to 12e as data-mcfo-rarinfo on <html>
+    // (the one thing the frame's page and the script in the top window share). Read only:
+    // the answer goes on to the game unchanged.
     const INV_RAR_MODULE = { 'marble-trails': 'marble_trails', 'marble-borders': 'marble_borders',
         'rebellion-auras': 'rebellion_aura_style', 'bidding-indicators': 'bidding_indicator_style', 'wreaths': 'wreaths' };
-    const INV_RAR_MODULE_PAGES = new Set(Object.values(INV_RAR_MODULE));
-    const INV_RAR_HIDDEN = 'mcfo-equipped';
+    // The game's own reading (inventoryFilters.js): no rarity is "default" - No Treatment, No Crown, Basic ...
     const invRarToken = i => String((i && i.rarity) || 'default').trim().toLowerCase() || 'default';
     // The page a list belongs to, or null. main: the list itself, not one of its sub-paths.
     function invRarTarget(url) {
@@ -148,7 +141,7 @@
         if (m[1] === 'crowns') return { page: 'crowns', main };
         if (m[1] === 'chat-font-colors') return { page: 'chat_font_colors', main };
         if (m[1] === 'chat-cosmetics') return { page: url.searchParams.get('slotType') || '', main };
-        if (INV_RAR_MODULE[m[1]]) return { page: INV_RAR_MODULE[m[1]], main, module: true };
+        if (INV_RAR_MODULE[m[1]]) return { page: INV_RAR_MODULE[m[1]], main };
         return null;
     }
     function invRarInfo(page, d) {
@@ -161,14 +154,20 @@
         let total = 0;
         for (const i of items) {
             const r = invRarToken(i);
-            if (r === 'default' || (i && i.systemDefault)) continue;   // No Crown, No Treatment
             const g = groups.get(r) || { r, n: 0, sel: false, pool: 0 };
             const id = String((i && i.inventoryItemId) || '');
-            g.n++; total++;
+            g.n++;
+            if (!(i && i.systemDefault)) total++;   // "N owned" leaves No Treatment out, as the game does
             if (sel.has(id)) g.sel = true;
             if (pool.has(id)) g.pool++;
             groups.set(r, g);
         }
+        // A chat slot with nothing chosen wears its No Treatment (No Crown has an id of its own).
+        const blank = 'ordinarySelectedInventoryItemId' in d || 'kingSelectedInventoryItemId' in d
+            ? !d.ordinarySelectedInventoryItemId || !d.kingSelectedInventoryItemId
+            : 'availableItems' in d && !d.selectedInventoryItemId;
+        const def = groups.get('default');
+        if (blank && def && items.some(i => i && i.systemDefault)) def.sel = true;
         return { page, total, groups: [...groups.values()] };
     }
     function invRarityTap() {
@@ -176,72 +175,33 @@
         const innerFetch = pw.fetch;   // the crown list cache's, when it is installed
         if (typeof innerFetch !== 'function') return;
         const html = document.documentElement;
-        const stash = new Map();       // page -> { d, at }: the whole list, last seen
+        const last = new Map();        // page -> the whole list, last seen
         const info = (page, d) => { try { html.setAttribute('data-mcfo-rarinfo', JSON.stringify(invRarInfo(page, d))); } catch (e) {} };
-        const cut = (page, d) => {
-            const pick = (html.getAttribute('data-mcfo-rarpick') || '').split('|');
-            if (!INV_RAR_MODULE_PAGES.has(page) || pick[0] !== page || !pick[1]) return d;
-            const all = d.items || [];
-            const items = all.filter(i => invRarToken(i) === pick[1]);
-            const selId = String((d.equipment && d.equipment.inventoryItemId) || '');
-            const sel = selId && !items.some(i => String(i.inventoryItemId) === selId) && all.find(i => String(i.inventoryItemId) === selId);
-            if (sel) items.push({ ...sel, rarity: INV_RAR_HIDDEN });
-            return { ...d, items };
-        };
-        const json = d => new pw.Response(JSON.stringify(d), { status: 200, headers: { 'Content-Type': 'application/json' } });
         pw.fetch = function (input, init) {
             let url, method;
             try {
                 url = new URL(typeof input === 'string' ? input : String((input && input.url) || ''), pw.location.href);
                 method = String((init && init.method) || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase();
             } catch (e) { return innerFetch.apply(this, arguments); }
-            if (url.origin !== pw.location.origin || !url.pathname.startsWith('/api/inventory/')) return innerFetch.apply(this, arguments);
-            // 12e's way of making the game fetch the list again (invRarPick): a click on Default
-            // Toll and straight back. The Default Toll list it asks for on the way is never answered,
-            // so that half-finished page can never draw over the one that follows.
-            if (method === 'GET' && url.pathname === '/api/inventory/default-tolls' && html.hasAttribute('data-mcfo-rarhang')) {
-                html.removeAttribute('data-mcfo-rarhang');
-                return new pw.Promise(() => {});
-            }
-            const t = invRarTarget(url);
-            if (!t) return innerFetch.apply(this, arguments);
+            const t = url.origin === pw.location.origin ? invRarTarget(url) : null;
             const live = innerFetch.apply(this, arguments);
+            if (!t) return live;
             if (method !== 'GET' || !t.main) {
-                // Equip / pool on a module page: the game keeps its list and takes the new equipment
-                // from the answer - the counts here follow it.
-                const s = stash.get(t.page);
-                if (s) live.then(res => (res.ok ? res.clone().json() : null)).then(b => {
-                    if (b && b.equipment) { s.d = { ...s.d, equipment: b.equipment }; info(t.page, s.d); }
+                // Equip / pool on a marble page: the game keeps its list and takes the new equipment
+                // from the answer - the counts follow it.
+                const d = last.get(t.page);
+                if (d) live.then(res => (res.ok ? res.clone().json() : null)).then(b => {
+                    if (b && b.equipment) { const n = { ...d, equipment: b.equipment }; last.set(t.page, n); info(t.page, n); }
                 }).catch(() => {});
                 return live;
             }
+            // The game also fetches other lists for its previews (a border page asks for the trails):
+            // only the list of the page on show counts.
             const current = new URLSearchParams(pw.location.search).get('page') || 'crowns';
-            if (t.page !== current) return live;   // a companion list for the preview, left whole
-            return live.then(res => {
-                if (!res.ok) return res;
-                return res.clone().text().then(txt => {
-                    let d;
-                    try { d = JSON.parse(txt); } catch (e) { return res; }
-                    stash.set(t.page, { d, at: Date.now() });
-                    info(t.page, d);
-                    const c = cut(t.page, d);
-                    return c === d ? res : json(c);
-                });
-            });
-        };
-        // The list again right after a rarity was picked: from the stash when it is fresh, so the
-        // switch is instant. Read once, by the fetch the pick causes.
-        const viaStash = pw.fetch;
-        pw.fetch = function (input) {
-            if (html.hasAttribute('data-mcfo-rarfast')) {
-                html.removeAttribute('data-mcfo-rarfast');
-                let url = null;
-                try { url = new URL(typeof input === 'string' ? input : String((input && input.url) || ''), pw.location.href); } catch (e) {}
-                const t = url && invRarTarget(url);
-                const s = t && t.module && t.main && stash.get(t.page);
-                if (s && Date.now() - s.at < 120000) return pw.Promise.resolve(json(cut(t.page, s.d)));
-            }
-            return viaStash.apply(this, arguments);
+            if (t.page === current) live.then(res => (res.ok ? res.clone().json() : null)).then(d => {
+                if (d && typeof d === 'object') { last.set(t.page, d); info(t.page, d); }
+            }).catch(() => {});
+            return live;
         };
     }
 
@@ -840,7 +800,7 @@
         ]},
         { title: 'Inventory', blurb: 'How the categories of your inventory open.', items: [
             { key: 'invRarityGroups', label: 'Rarities first',
-              hint: 'A category opens on one tile per rarity, with how many items you have in it, and whether your equipped item and pool items are among them. Click a tile for its items, "Rarities" goes back. Categories with only one rarity open straight on their items.' },
+              hint: 'A category opens on one tile per rarity, with how many items you have in it, and whether your equipped item and pool items are among them. Items without a rarity (No Treatment, No Crown, Basic) share the Default tile. Click a tile for its items, "Rarities" goes back. The tiles use the game\'s own rarity filter.' },
         ]},
         { title: 'Footer', blurb: 'Season line, build, and which buttons stay.', items: [
             { key: 'footerMeta', label: 'Season, episode and build',
@@ -12519,12 +12479,18 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.56';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.56.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.56.1', date: '2026-10-08', items: [
+            'Inventory: rarity tiles also for categories with a single rarity (Rebellion Auras and the like).',
+            'Items without a rarity (No Treatment, No Crown, Basic) share a tile of their own, Default, last.',
+            'The rarity tiles now work through the game\'s new rarity filter (the select above the cards) - the same list, paging and Equipped as the game, and the Equipped checkbox stays beside the cards.',
+            'Fixed: the game\'s own rarity and Equipped filters had no effect on crowns and chat cards with MarbleLuceFall (its card layout kept the hidden cards on screen).',
+        ] },
         { v: '6.56', date: '2026-10-08', items: [
             'Inventory: every category with more than one rarity now opens on one tile per rarity (Exclusive, Mythic, Legendary, Epic, ...) with how many items you have in it, and whether your equipped item and pool items are among them. Click a tile to see only that rarity\'s items, \u2039 Rarities goes back. Borders, trails, auras, indicators and wreaths page through that rarity alone. Switch it off in Settings \u203a Inventory \u203a Rarities first.',
         ] },
@@ -12938,7 +12904,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 'Click your name for Profile, Dailies, Inventory, Achievements, Leaderboards, Settings, How to and Changelog. Logged out, the same menu offers Log in with Twitch.',
                 'The header cards are signposts: Gold opens the Shop, Diamonds the packages, the tileset card the upcoming tilesets.',
                 'Pages open as windows over the running game. Drag the title bar to move one, the corner to resize it, – parks it in the taskbar, Esc closes the top one.',
-                'In the inventory a category opens on one tile per rarity, with how many items you have in it and whether your equipped item is among them; click a tile for its items, \u2039 Rarities goes back. Settings \u203a Inventory \u203a Rarities first',
+                'In the inventory a category opens on one tile per rarity (items without one share the Default tile), with how many items you have in it and whether your equipped item is among them; click a tile for its items, \u2039 Rarities goes back. Settings \u203a Inventory \u203a Rarities first',
             ] },
             { title: 'Ticket rail', items: [
                 'Rebellion sits left of the chips. The bigger chips fold away behind the arrow; 10K to 1B unlock at ten times their amount in tickets.',
@@ -16082,23 +16048,25 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         }
     }
 
-    // Rarities first (6.56). A category of the inventory opens on one tile per rarity - name,
-    // count, whether the equipped item and pool items are in it - and a click on a tile shows
-    // that rarity's items, with "Rarities" to go back. The counts come from the frame side
-    // (0a, invRarityTap), which sees the whole list. Crowns and chat: the other cards are only
-    // hidden. Borders, trails, auras, indicators, wreaths page through 12 cards inside the game,
-    // so the game is made to fetch its list again, which 0a then cuts to the rarity. Categories
-    // with a single rarity (and titles, tolls) stay as they are - one tile would only be a click more.
+    // Rarities first (6.56, reworked 6.56.1). A category of the inventory opens on one tile per
+    // rarity - name, count, whether the equipped item and pool items are in it - and a click on a
+    // tile shows that rarity's items, with "Rarities" to go back. Since build 16553fb the game
+    // has a rarity filter of its own (a select above the cards, inventoryFilters.js): it hides
+    // the other cards, or on the marble pages pages through that rarity alone, and keeps the
+    // equipped name and the preview right. The tiles simply turn that select, so the game's
+    // filter state IS the view: no rarity = the tiles. Items without a rarity (No Treatment,
+    // No Crown, the Basic ones) are the game's "default" and get a tile of their own, last.
+    // The counts come from the frame side (0a, invRarityTap), which sees the whole list.
     const INV_RAR_LOOK = {   // tile, fill, line: the game's rarity palette (canonicalRarityPalette.js, crownPreviewStyle)
         unique: ['#4a1238', '#ff4fcf', '#ffb3ea'], exclusive: ['#2a2c31', '#f7fbff', '#ffffff'],
         cosmic: ['#111013', '#272330', '#514a61'], ethereal: ['#534351', '#c6a0c1', '#e0d2de'],
         mythic: ['#321e1d', '#992824', '#d66a66'], legendary: ['#3d3021', '#bc7824', '#e1b16b'],
         epic: ['#241a2c', '#592285', '#a862e2'], rare: ['#1c2633', '#20569d', '#5da4e1'],
-        common: ['#131b14', '#214d24', '#4d8b51'],
+        common: ['#131b14', '#214d24', '#4d8b51'], default: ['#1b2128', '#3a4654', '#8796a6'],
     };
-    const INV_RAR_ORDER = Object.keys(INV_RAR_LOOK);   // the game's order: rarest first
+    const INV_RAR_ORDER = Object.keys(INV_RAR_LOOK);   // the game's order: rarest first, default last
     const invRarName = r => r.charAt(0).toUpperCase() + r.slice(1);
-    let invRarSwitching = false;
+    const invRarSelect = root => root.querySelector('.inventorySelectionPanel select[data-inventory-rarity]');
     function invRarity(doc, root) {
         const html = doc.documentElement;
         const page = loPage(doc);
@@ -16106,17 +16074,13 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         try { info = JSON.parse(html.getAttribute('data-mcfo-rarinfo') || 'null'); } catch (e) {}
         const panel = root.querySelector('.inventorySelectionPanel');
         const cards = panel && panel.querySelector(':scope > .inventoryCards');
-        const on = !!(settings.invRarityGroups && info && info.page === page && info.groups && info.groups.length >= 2 && cards);
-        const pick = (html.getAttribute('data-mcfo-rarpick') || '').split('|');
-        const r = on && pick[0] === page && info.groups.some(g => g.r === pick[1]) ? pick[1] : '';
+        const select = invRarSelect(root);
+        const on = !!(settings.invRarityGroups && info && info.page === page && info.groups && info.groups.length && cards && select);
+        const r = on ? select.value : '';
         const view = !on ? '' : r ? 'pick' : 'all';
         if ((html.getAttribute('data-mcfo-rarview') || '') !== view) {
             if (view) html.setAttribute('data-mcfo-rarview', view); else html.removeAttribute('data-mcfo-rarview');
         }
-        let st = doc.getElementById('mcfo-rar-pick');
-        const rule = r ? `html[data-mcfo-rarview=pick] .inventorySelectionPanel > .inventoryCards > article:not([data-rarity="${r}"]) { display: none; }` : '';
-        if (!st) { st = doc.createElement('style'); st.id = 'mcfo-rar-pick'; (doc.head || html).appendChild(st); }
-        if (st.textContent !== rule) st.textContent = rule;
         let bar = panel && panel.querySelector(':scope > .mcfo-rar');
         if (!on) { if (bar) bar.remove(); return; }
         if (!bar) {
@@ -16124,91 +16088,45 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             bar.className = 'mcfo-rar';
             bar.addEventListener('click', e => {
                 const b = e.target.closest && e.target.closest('[data-mcfo-rar]');
-                if (b) invRarPick(doc, root, loPage(doc), b.getAttribute('data-mcfo-rar'));
+                if (b) invRarPick(doc, root, b.getAttribute('data-mcfo-rar'));
             });
         }
         if (bar.nextElementSibling !== cards) cards.before(bar);
         const groups = [...info.groups].sort((a, b) => INV_RAR_ORDER.indexOf(a.r) - INV_RAR_ORDER.indexOf(b.r));
-        const sig = JSON.stringify([view, r, groups, info.total]);
-        if (bar.__mcfoSig !== sig) {
-            bar.__mcfoSig = sig;
-            const look = g => { const c = INV_RAR_LOOK[g] || ['#1b2128', '#3a4654', '#8796a6'];
-                return `--mcfo-rar-bg:${c[0]};--mcfo-rar-fill:${c[1]};--mcfo-rar-line:${c[2]}`; };
-            if (view === 'all') {
-                bar.innerHTML = `<div class="mcfo-rar__grid">${groups.map(g => `
-                    <button type="button" class="mcfo-rar__tile" data-mcfo-rar="${escapeHtml(g.r)}" style="${look(g.r)}">
-                        <span class="mcfo-rar__gem"></span>
-                        <b>${escapeHtml(invRarName(g.r))}</b>
-                        <span class="mcfo-rar__n">${g.n}</span>
-                        <span class="mcfo-rar__tags">${g.sel ? '<i data-tone="eq">Equipped</i>' : ''}${g.pool ? `<i>${g.pool} in pool</i>` : ''}</span>
-                    </button>`).join('')}</div>`;
-            } else {
-                const g = groups.find(x => x.r === r);
-                bar.innerHTML = `<div class="mcfo-rar__bar" style="${look(r)}">
-                    <button type="button" class="mcfo-rar__back" data-mcfo-rar="">‹ Rarities</button>
-                    <span class="mcfo-rar__gem"></span><b>${escapeHtml(invRarName(r))}</b>
-                    <span class="mcfo-rar__of">${g.n} of ${info.total}</span>
-                    <span class="mcfo-rar__tags">${g.sel ? '<i data-tone="eq">Equipped</i>' : ''}${g.pool ? `<i>${g.pool} in pool</i>` : ''}</span>
-                </div>`;
-            }
-        }
-        if (view === 'pick' && INV_RAR_MODULE_PAGES.has(page)) invRarModuleFix(panel, info, groups.find(x => x.r === r));
-    }
-    // On a module page the game counts the cut list, plus the hidden equipped item: "N owned"
-    // goes back to the whole inventory, and the pager must not offer a page holding only that card.
-    function invRarModuleFix(panel, info, g) {
-        const owned = panel.querySelector(':scope > .inventoryPanelHeader .inventoryMuted');
-        const text = `${info.total} owned`;
-        if (owned && /owned/.test(owned.textContent) && owned.textContent !== text) owned.textContent = text;
-        const pager = panel.querySelector(':scope > .inventoryActions');
-        const span = pager && pager.querySelector('span');
-        const m = span && span.textContent.match(/^(\d+)\/(\d+)$/);
-        if (!m) return;
-        const pages = Math.max(1, Math.ceil(g.n / 12));
-        const want = `${Math.min(+m[1], pages)}/${pages}`;
-        if (span.textContent !== want) span.textContent = want;
-        // Opened on a page the game kept from before that now holds only the hidden card: one back.
-        if (+m[1] > pages) { const prev = pager.querySelector('button'); if (prev && !prev.disabled) prev.click(); return; }
-        const next = pager.querySelector('button:last-of-type');
-        if (!next) return;
-        const end = +m[1] >= pages;
-        if (end !== next.hasAttribute('data-mcfo-rar-end')) next.toggleAttribute('data-mcfo-rar-end', end);
-        if (end && !next.disabled) next.disabled = true;   // the game enables it again after equip / pool - the click guard in invDocAssist holds
-    }
-    function invRarPick(doc, root, page, r) {
-        const html = doc.documentElement;
-        html.setAttribute('data-mcfo-rarpick', page + '|' + r);
-        if (!INV_RAR_MODULE_PAGES.has(page)) {
-            invRarity(doc, root);
-            const list = root.querySelector('.inventorySelectionPanel > .inventoryCards');
-            if (list) list.scrollTop = 0;
-            return;
-        }
-        // The game keeps its list inside the module and fetches it only when a category is opened
-        // - and a click on the category already open does nothing. So: Default Toll and straight
-        // back, in one go (nothing is drawn in between). The way there is never answered (0a), the
-        // way back is answered from the list 0a just saw, cut to the rarity. The button of this
-        // page is taken first: the game replaces the sidebar on the first click, and the old
-        // button still carries its handler.
-        const here = doc.querySelector(`button.inventorySubcategoryButton[data-page="${page}"]`);
-        const away = doc.querySelector('button.inventorySubcategoryButton[data-page="default_toll"]:not([disabled])');
-        if (!here || !away) { doc.defaultView.location.reload(); return; }
-        invRarSwitching = true;
-        try {
-            html.setAttribute('data-mcfo-rarhang', '1');
-            away.click();
-            html.setAttribute('data-mcfo-rarfast', '1');
-            here.click();
-        } finally {
-            invRarSwitching = false;
-            html.removeAttribute('data-mcfo-rarhang');
-            html.removeAttribute('data-mcfo-rarfast');
+        const g = groups.find(x => x.r === r) || { r, n: 0, sel: false, pool: 0 };
+        const sig = JSON.stringify([view, r, view === 'all' ? groups : g, info.total]);
+        if (bar.__mcfoSig === sig) return;
+        bar.__mcfoSig = sig;
+        const look = x => { const c = INV_RAR_LOOK[x] || INV_RAR_LOOK.default;
+            return `--mcfo-rar-bg:${c[0]};--mcfo-rar-fill:${c[1]};--mcfo-rar-line:${c[2]}`; };
+        const tags = x => `<span class="mcfo-rar__tags">${x.sel ? '<i data-tone="eq">Equipped</i>' : ''}${x.pool ? `<i>${x.pool} in pool</i>` : ''}</span>`;
+        if (view === 'all') {
+            bar.innerHTML = `<div class="mcfo-rar__grid">${groups.map(x => `
+                <button type="button" class="mcfo-rar__tile" data-mcfo-rar="${escapeHtml(x.r)}" style="${look(x.r)}">
+                    <span class="mcfo-rar__gem"></span><b>${escapeHtml(invRarName(x.r))}</b><span class="mcfo-rar__n">${x.n}</span>${tags(x)}
+                </button>`).join('')}</div>`;
+        } else {
+            bar.innerHTML = `<div class="mcfo-rar__bar" style="${look(r)}">
+                <button type="button" class="mcfo-rar__back" data-mcfo-rar="">‹ Rarities</button>
+                <span class="mcfo-rar__gem"></span><b>${escapeHtml(invRarName(r))}</b><span class="mcfo-rar__of">${g.n}</span>${tags(g)}
+            </div>`;
         }
     }
-
+    function invRarPick(doc, root, r) {
+        const select = invRarSelect(root);
+        if (!select) return;
+        if (r && ![...select.options].some(o => o.value === r)) return;
+        select.value = r;
+        // The game listens with select.onchange; an event made in the page's own window reaches it.
+        select.dispatchEvent(new (doc.defaultView.Event)('change', { bubbles: true }));
+        invRarity(doc, root);
+        const list = root.querySelector('.inventorySelectionPanel > .inventoryCards');
+        if (list) list.scrollTop = 0;
+    }
     const INV_RAR_CSS = `
-        /* the panel is a grid (header | list as 1fr | pager): the tiles get a row of their own above the list */
+        /* the panel is a grid (header | [filters] | list as 1fr | pager): the tiles get a row of their own above the list */
         .inventorySelectionPanel:has(> .mcfo-rar) { grid-template-rows: auto auto minmax(0, 1fr) auto; row-gap: 10px; }
+        html[data-mcfo-rarview=pick] .inventorySelectionPanel:has(> .mcfo-rar):has(> .inventoryFilters) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
         .mcfo-rar { margin: 0; min-width: 0; }
         .mcfo-rar__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
         .mcfo-rar__tile { position: relative; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 10px;
@@ -16233,11 +16151,11 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         .mcfo-rar__back { border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 7px; background: rgba(0, 0, 0, 0.35); color: #f2f4f7;
             font: 700 12px/1 system-ui, sans-serif; padding: 7px 10px; cursor: pointer; }
         .mcfo-rar__back:hover { border-color: var(--mcfo-rar-line); }
-        /* the overview: only the tiles (and No Crown / No Treatment, which is a choice, not an item) */
-        html[data-mcfo-rarview=all] .inventorySelectionPanel > .inventoryCards > article:not([data-rarity="default"]),
+        /* the overview: only the tiles. A rarity picked: the game's select is the tiles' job, Equipped and the count stay */
+        html[data-mcfo-rarview=all] .inventorySelectionPanel > .inventoryCards,
         html[data-mcfo-rarview=all] .inventorySelectionPanel > .inventoryActions,
-        .inventorySelectionPanel > .inventoryCards > article[data-rarity="mcfo-equipped"] { display: none; }
-        html[data-mcfo-rarview=all] .inventorySelectionPanel > .inventoryCards:not(:has(> article[data-rarity="default"])) { display: none; }
+        html[data-mcfo-rarview=all] .inventorySelectionPanel .inventoryFilters,
+        html[data-mcfo-rarview=pick] .inventorySelectionPanel .inventoryFilters label:has(> select[data-inventory-rarity]) { display: none; }
     `;
 
     function invDocAssist(doc) {
@@ -16250,14 +16168,6 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         (doc.head || doc.documentElement).appendChild(st);
         loDocs.add(doc);
         const keepScroll = invKeepScroll(doc, root);
-        doc.addEventListener('click', e => {
-            if (invRarSwitching || !e.target.closest) return;
-            // Another category opens on its rarity tiles again; cleared before the game asks for the list.
-            if (e.target.closest('.inventorySidebar [data-page]')) doc.documentElement.removeAttribute('data-mcfo-rarpick');
-            // The pager's last real page (invRarModuleFix): the game may have enabled Next again.
-            const end = e.target.closest('[data-mcfo-rar-end]');
-            if (end && doc.documentElement.getAttribute('data-mcfo-rarview') === 'pick') { e.stopPropagation(); e.preventDefault(); }
-        }, true);
         let queued = false;
         new MutationObserver(() => {
             // Right away, not in the 60 ms batch below: the game has just thrown the old list away,
@@ -16317,6 +16227,8 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         .inventorySelectionPanel .inventoryCardPreview svg[data-mcfo-fit="1"] { width: 100% !important; height: 100% !important; max-width: none !important; aspect-ratio: auto !important; }
         .inventorySelectionPanel .inventoryCardPreview [data-border-card] { height: 100%; }
         .inventorySelectionPanel .inventoryCard { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 7px; }
+        /* the game filters crowns and chat by setting hidden on the card (inventoryFilters.js); display:flex above beat its [hidden] rule */
+        .inventorySelectionPanel .inventoryCard[hidden], .inventorySelectionPanel [data-inventory-no-matches][hidden] { display: none; }
         .inventorySelectionPanel .inventoryCard > .inventoryCardPreview { flex: none; }
         .inventorySelectionPanel .inventoryCardActions { margin-top: auto; }
         .inventorySelectionPanel .inventoryCard h3 { margin: 0; font-size: 12.5px; line-height: 1.25; min-height: 2.5em;
@@ -16469,7 +16381,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     function invKeepScroll(doc, root) {
         const keep = new Map();
         const pager = () => { const p = root.querySelector('.inventorySelectionPanel > .inventoryActions span'); return p ? p.textContent.trim() : ''; };
-        const key = i => i === 1 ? 'sidebar' : (i === 2 ? 'col|' : '') + loPage(doc) + '|' + (doc.documentElement.getAttribute('data-mcfo-rarpick') || '') + '|' + pager();
+        const key = i => i === 1 ? 'sidebar' : (i === 2 ? 'col|' : '') + loPage(doc) + '|' + ((invRarSelect(root) || {}).value || '') + '|' + pager();
         const loading = () => !!root.querySelector('.inventoryStatus');
         let docWas = false;
         doc.addEventListener('scroll', e => {
