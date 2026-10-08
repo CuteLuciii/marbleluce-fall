@@ -10,4 +10,13 @@ updates automatically.
 This repository holds the current release; every commit is one version, and Greasy Fork syncs from it.
 The changelog is inside the script (Settings › What's new).
 
+## Source
+
+The script is kept in pieces under [`src/`](src/), one file per part of the game it touches
+(`themes/`, `king/`, `chat/`, `rail/` with autobid, `pages/` with loadouts and the shop, `panel/` with the
+settings, help and music player, `boot/` for what runs at document-start, including the new inventory and
+achievements pages). `node build.js` joins them, in the order of [`src/order.txt`](src/order.txt), into
+`MarbleLuceFall.user.js` — nothing is added or changed, the pieces share the script's one scope. No
+dependencies, any current Node.js.
+
 License: MIT
