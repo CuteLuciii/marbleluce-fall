@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.57.1
+// @version      6.57.2
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes, pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, a new inventory with loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -233,7 +233,9 @@
         };
         const rar = i => String((i && i.rarity) || 'default').trim().toLowerCase() || 'default';
         const rarName = r => r.charAt(0).toUpperCase() + r.slice(1);
-        const look = r => { const c = LOOK[r] || LOOK.default; return `--mi-bg:${c[0]};--mi-fill:${c[1]};--mi-line:${c[2]};--mi-pic:${c[3] || c[0]}`; };
+        const LIGHT = new Set(['exclusive', 'ethereal']);   // pale cards: dark text on them
+        const look = r => { const c = LOOK[r] || LOOK.default;
+            return `--mi-bg:${c[0]};--mi-fill:${c[1]};--mi-line:${c[2]};--mi-pic:${c[3] || c[0]};--mi-ink:${LIGHT.has(r) ? '#161a21' : '#f4f6f9'}`; };
         const NO_CROWN = 'system_no_crown', NO_CHAT = 'system_no_chat_treatment:';
         const ICON = {
             overview: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>',
@@ -581,7 +583,7 @@
                     <div class="mi-ctl">${ctl}</div></div>
                 <div class="mi-filters">
                     <input type="search" class="mi-search" data-f="q" placeholder="Search ${esc((p.plural || p.label).toLowerCase())}" value="${esc(f.q)}">
-                    ${rars.length && p.kind !== 'title' && p.kind !== 'toll' ? `<div class="mi-rars"><button type="button" class="mi-rar" data-rar="" aria-pressed="${!f.rarity}">All <i>${m.items.length}</i></button>${rars.map(r =>
+                    ${rars.length ? `<div class="mi-rars"><button type="button" class="mi-rar" data-rar="" aria-pressed="${!f.rarity}">All <i>${m.items.length}</i></button>${rars.map(r =>
                         `<button type="button" class="mi-rar" data-rar="${r}" style="${look(r)}" aria-pressed="${f.rarity === r}"><b></b>${rarName(r)} <i>${groups.get(r)}</i></button>`).join('')}</div>` : ''}
                     <button type="button" class="mi-rar" data-f="eq" aria-pressed="${f.eq}">Equipped</button>
                     ${pooled(m) ? `<button type="button" class="mi-rar" data-f="pool" aria-pressed="${f.pool}">In pool</button>` : ''}
@@ -644,8 +646,9 @@
                 // Titles and tolls: the name is the card; the occasions it is used for underneath, short.
                 const ctx = m.contexts.filter(c => String(c.selectedInventoryItemId) === id)
                     .map(c => `<span class="mi-badge" data-tone="eq">${esc(String(c.label).replace(/\s+default$/i, ''))}</span>`).join('');
-                return `<article class="inventoryCard mi-card mi-card--text" data-id="${esc(id)}" data-rarity="${esc(r)}" aria-selected="${id === fid}" tabindex="0">
+                return `<article class="inventoryCard mi-card mi-card--text" data-id="${esc(id)}" data-rarity="${esc(r)}" style="${look(r)}" aria-selected="${id === fid}" tabindex="0">
                     <div class="mi-thumb mi-thumb--text">${esc(i.displayName)}</div><h3>${esc(i.displayName || id)}</h3>
+                    <div class="mi-card__foot"><span class="mi-card__rar">${r === 'default' ? '' : esc(rarName(r))}</span></div>
                     <div class="mi-ctx">${ctx}</div></article>`;
             }
             return `<article class="inventoryCard mi-card" data-id="${esc(id)}" data-rarity="${esc(r)}" style="${look(r)}" aria-selected="${id === fid}" tabindex="0">
@@ -712,7 +715,7 @@
                 ${tabs}
                 ${textOnly ? `<div class="mi-big mi-big--text">${esc(i.displayName)}</div>` : `<div class="mi-big mi-big--${p.kind}${st.fullTile && p.kind === 'crown' ? ' mi-big--tile' : ''}${p.wide ? ' mi-big--wide' : ''}"></div>`}
                 <h2>${esc(i.displayName || id)}</h2>
-                ${r !== 'default' && !textOnly ? `<span class="mi-pill">${esc(rarName(r))}</span>` : ''}
+                ${r !== 'default' ? `<span class="mi-pill">${esc(rarName(r))}</span>` : ''}
                 ${actions}
                 <div class="mi-meta">${prov}${comp}</div>
             </div>`;
@@ -1077,6 +1080,24 @@
         .mi-slot__text b { color: var(--gold-soft, #ffe4a4); text-align: right; }
         .mi-slot__name { font-size: 13.5px; }
         .mi-slot__sub { font-size: 11.5px; color: var(--muted, #95a9ba); min-height: 15px; }
+        /* 6.57.2 - one look for every category: the whole card in the rarity's colour, the picture on one
+           neutral ground (the ground the trails bring along anyway), so the colour reads as a thick frame. */
+        .mi .mi-card.inventoryCard, .mi .mi-slot { color: var(--mi-ink, #f4f6f9);
+            border: 1px solid color-mix(in srgb, var(--mi-line) 75%, transparent);
+            background: linear-gradient(170deg, color-mix(in srgb, var(--mi-fill) 88%, #fff 12%), color-mix(in srgb, var(--mi-fill) 78%, #000 22%)); }
+        .mi .mi-card.inventoryCard { padding: 6px; }
+        .mi .mi-card.inventoryCard:hover, .mi .mi-slot:hover { border-color: var(--mi-line); box-shadow: 0 6px 16px -8px rgba(0, 0, 0, .7); }
+        .mi .mi-card.inventoryCard[aria-selected=true] { border-color: var(--mi-line); box-shadow: none; outline: 2px solid var(--gold-soft, #ffe4a4); outline-offset: 2px; }
+        .mi-thumb, .mi-big, .mi-slot__pic, .mi-thumb--text, .mi-big--text { background: #182032 !important; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35); }
+        .mi-big { border: 4px solid var(--mi-fill); box-sizing: border-box; }
+        .mi-card__foot, .mi-slot__sub, .mi-slot__label { color: color-mix(in srgb, var(--mi-ink, #f4f6f9) 78%, transparent); }
+        .mi-card__foot .mi-dot { display: none; }
+        .mi-card__rar { font-weight: 700; }
+        .mi .mi-card .mi-badge { background: rgba(0, 0, 0, .55); color: #fff; }
+        .mi .mi-card .mi-badge[data-tone=eq] { border-color: #7ec98f; color: #9be3ac; }
+        .mi .mi-card .mi-badge[data-tone=pool] { border-color: #5ca7d8; color: #a6d3f2; }
+        .mi-thumb--text { color: var(--gold-soft, #ffe4a4); }
+        .mi .mcfo-lob button.mcfo-lob__pick { color: #cfe2f2; }   /* .mi button inherits the card's ink - dark on pale cards */
         /* narrower windows */
         @media (max-width: 1180px) {
             .mi { grid-template-columns: 58px minmax(0, 1fr) minmax(260px, 310px); }
@@ -13372,12 +13393,16 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.57.1';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.57.2';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.57.2', date: '2026-10-08', items: [
+            'New inventory: one look for every category - the whole card in the colour of its rarity (Exclusive white, with dark text), the picture on one neutral ground, the large preview framed in the same colour. The same for the Overview slots.',
+            'Royal Titles and Default Tolls show their rarity again: coloured cards, rarity chips and the rarity under the name.',
+        ] },
         { v: '6.57.1', date: '2026-10-08', items: [
             'New inventory: every picture sits on the colour of its rarity, so the rarities stand apart at a glance - Exclusive on white, as the game shows its crowns.',
             'Default Tolls and Royal Titles: smaller cards, and the occasions a toll or title is used for in a short row of their own instead of the large circles.',
