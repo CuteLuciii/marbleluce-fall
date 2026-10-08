@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.54.2
+// @version      6.55
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes (pride, games, film, books, music, patterns, random), pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -608,10 +608,9 @@
             { key: 'kcThwarted', label: 'Challengers thwarted',  hint: 'top right' },
             { key: 'kingToll',   label: 'Toll setting',          hint: 'top right, added by MarbleLuceFall' },
         ] } },
-        // 17 is TOLL_MAX of section 9c, which is declared further down and not reachable here.
         { title: 'On the throne', blurb: 'Typing the toll, and beverages poured by themselves the moment you take the crown. The toll on taking the throne is the game\'s Default Toll (Inventory).', throne: true, items: [
             { key: 'tollInput', label: 'Type the toll',
-              hint: 'On the throne: a field for 0 to 17, confirmed with Enter, instead of the Reduce and Increase buttons.' },
+              hint: 'On the throne: a field for 0 up to your own toll limit, confirmed with Enter, instead of the Reduce and Increase buttons.' },
             { key: 'tollSlider', def: false, label: 'Toll slider',
               hint: 'Adds a slider next to the field. Needs the field above.' },
             { key: 'throneDrinks', def: false, redraw: true, label: 'Pour beverages',
@@ -10477,10 +10476,46 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     // stops there. The game's three controls are only hidden, never removed; renderKingTollControls
     // sets their properties but never rebuilds them.
     //
-    // 17 is only what the field offers and clamps to. The real bounds are the game's
-    // (/api/king/toll-capability): should they ever change, the game stops at its own limit.
-    const TOLL_MAX = 17;
+    // The upper end is per player: higher tolls are unlocked one by one, and the game tells each
+    // King their own limit in /api/king/toll-capability (toll.maxBaseToll, the same answer the
+    // game's buttons are clamped to). The field asks for it while the toll controls are on screen
+    // and never shows more than that, so nobody sees a value they have not unlocked. 17 is the
+    // game's own fallback (KING_TOLL_MAX in app.js) until the answer is in.
+    const TOLL_FALLBACK_MAX = 17;
+    const TOLL_CAP_EVERY_MS = 60000;   // the server caches the answer for 60 s (cacheTtlMs)
     const TOLL_OK_SHOW_MS = 2500;
+    const tollCap = { max: TOLL_FALLBACK_MAX, at: 0, busy: false };
+
+    function tollMax() { return tollCap.max; }
+
+    function refreshTollCap(box) {
+        if (tollCap.busy || Date.now() - tollCap.at < TOLL_CAP_EVERY_MS) return;
+        tollCap.busy = true;
+        tollCap.at = Date.now();
+        fetch('/api/king/toll-capability', { credentials: 'include', cache: 'no-store' })
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+                const t = d && d.toll;
+                if (!t || d.isCurrentKing !== true) return;   // only a sitting King gets the bounds
+                const vals = Array.isArray(t.allowedValues) ? t.allowedValues.map(Number).filter(Number.isFinite) : [];
+                const max = Number.isFinite(Number(t.maxBaseToll)) ? Math.trunc(Number(t.maxBaseToll))
+                          : vals.length ? Math.max(...vals) : null;
+                if (max !== null && max >= 0 && max !== tollCap.max) { tollCap.max = max; applyTollMax(box); }
+            })
+            .catch(() => {})
+            .finally(() => { tollCap.busy = false; });
+    }
+
+    function applyTollMax(box) {
+        if (!box || !box.isConnected) return;
+        const max = String(tollMax());
+        const input = box.querySelector('.mcfo-toll__input');
+        const range = box.querySelector('.mcfo-toll__range');
+        input.max = max;
+        input.title = 'Type 0 to ' + max + ' and press Enter \u00b7 Esc cancels';
+        range.max = max;
+        box.querySelector('.mcfo-toll__max').textContent = '/ ' + max;
+    }
 
     function tollState() {
         const controls = role('king-toll-controls');
@@ -10510,7 +10545,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         const input = box.querySelector('.mcfo-toll__input');
         let want = Math.round(Number(target));
         if (st.value === null || !Number.isFinite(want) || String(target).trim() === '') { syncTollField(box, true); return; }
-        want = Math.max(0, Math.min(TOLL_MAX, want));
+        want = Math.max(0, Math.min(tollMax(), want));
         input.value = String(want);
         stepTollTo(want);
         input.removeAttribute('data-mcfo-dirty');
@@ -10560,10 +10595,9 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             box = document.createElement('div');
             box.className = 'mcfo-toll';
             box.innerHTML = '<span class="mcfo-toll__label">Toll</span>'
-                          + '<input class="mcfo-toll__input" type="number" inputmode="numeric" min="0" max="' + TOLL_MAX + '" step="1"'
-                          + ' title="Type 0 to ' + TOLL_MAX + ' and press Enter · Esc cancels">'
-                          + '<span class="mcfo-toll__max">/ ' + TOLL_MAX + '</span>'
-                          + '<input class="mcfo-toll__range" type="range" min="0" max="' + TOLL_MAX + '" step="1" title="Drag and let go to set the toll">'
+                          + '<input class="mcfo-toll__input" type="number" inputmode="numeric" min="0" step="1">'
+                          + '<span class="mcfo-toll__max"></span>'
+                          + '<input class="mcfo-toll__range" type="range" min="0" step="1" title="Drag and let go to set the toll">'
                           + '<span class="mcfo-toll__status"></span>';
             const input = box.querySelector('.mcfo-toll__input');
             const range = box.querySelector('.mcfo-toll__range');
@@ -10582,6 +10616,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             range.addEventListener('input', () => { input.value = range.value; });
             range.addEventListener('change', () => { box._mcfoDragging = false; commitToll(box, range.value); });
             controls.appendChild(box);
+            applyTollMax(box);
 
             // The value and the game's message change between our 1.5 s passes; follow them
             // directly so "Syncing…" and the new number show at once.
@@ -10589,6 +10624,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
                 { subtree: true, childList: true, characterData: true, attributes: true,
                   attributeFilter: ['title', 'data-king-toll-can-edit', 'data-king-toll-base'] });
         }
+        refreshTollCap(box);
         syncTollField(box);
     }
 
@@ -12355,12 +12391,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.54.2';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.55';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.55', date: '2026-10-08', items: [
+            'Toll field on the throne: the upper end now follows the game\'s own toll limit for your account instead of a fixed 17. Field, slider and the number beside them show your limit.',
+        ] },
         { v: '6.54.2', date: '2026-10-07', items: [
             'Inventory, Rebellion Auras: the aura pictures stay inside their card again. If the window was minimised or hidden while the game drew them, an aura could run over its name and hide the Equip and Pool buttons.',
             'Inventory in a narrow window (about 820 to 1000 px wide): details, preview and your items now scroll as one column next to the sidebar, instead of squeezing the item list down to a single cut-off card.',
