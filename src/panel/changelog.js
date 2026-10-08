@@ -1,5 +1,8 @@
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.59.1', date: '2026-10-08', items: [
+            'Attack when free waits out a Royal Celebration and your own Rebellion, the way it waits out a lava cooldown: your autobid keeps playing, no unbid is sent, and the attack goes in right after. Before, it sent an unbid for nothing and gave up after five minutes ("NOT FREE IN 5 MIN").',
+        ] },
         { v: '6.59', date: '2026-10-08', items: [
             'Windows can be resized at every edge and corner now, not only at the grip bottom right.',
             'Achievements and the new inventory have a Reload button in their header: the data is loaded again, and you stay on the page and the category you are on.',

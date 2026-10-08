@@ -252,7 +252,7 @@
         // Not during a lava cooldown (6.20): it runs down with the clock alone, and its three
         // minutes are tiles worth playing, as the MarbleMind bot does it. The one !unbid comes
         // once the cooldown is over.
-        if (assist.active && assist.phase !== 'lava' && assist.phase !== 'lockout') return abSet('hold', 'Paused while "Attack when free" is running.');
+        if (assist.active && !ASSIST_SIT_PHASES.includes(assist.phase)) return abSet('hold', 'Paused while "Attack when free" is running.');
         if (!holdsTabLock(now)) return abSet('hold', 'Another tab is bidding for you, this one stands by.');
         if (!tapInstalled) return abSet('alert', 'The lanes cannot be read in this browser, so nothing is bid.');
         if (!lanes.size) {

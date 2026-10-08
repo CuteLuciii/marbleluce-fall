@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.59
+// @version      6.59.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes, pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, new inventory and achievements pages, loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -2098,7 +2098,7 @@
             { key: 'trayLift', label: 'Tray under the tile',
               hint: 'The attack tray sits right under the king tile, whatever the size of the window, instead of at the bottom of the pane.' },
             { key: 'attackAssist', def: false, label: 'Attack when free',
-              hint: 'Opt-in. Replaces the attack button with one that also works while you are bidding or in a tile: it sends !unbid once, sits out a lava cooldown (your autobid keeps playing meanwhile), waits until your marble is free and then presses the game\'s own attack button. Click it again to cancel. If something bids for you automatically, it says so instead of waiting in vain. Try again until King: after a miss (a lava bubble, the wall holding) it starts over by itself until you sit on the throne. Every miss costs points, a lava pop takes the value of the bubble, so this can burn through a lot.',
+              hint: 'Opt-in. Replaces the attack button with one that also works while you are bidding or in a tile: it sends !unbid once, sits out a lava cooldown, a new King\'s protection, a Royal Celebration or your own Rebellion (your autobid keeps playing meanwhile), waits until your marble is free and then presses the game\'s own attack button. Click it again to cancel. If something bids for you automatically, it says so instead of waiting in vain. Try again until King: after a miss (a lava bubble, the wall holding) it starts over by itself until you sit on the throne. Every miss costs points, a lava pop takes the value of the bubble, so this can burn through a lot.',
               sub: { key: 'attackRetry', type: 'choice', label: 'After a miss', def: 0, options: [[0, 'Stop'], [1, 'Try again until King']] } },
         ], grid: { title: 'Lines on the king tile', items: [
             { key: 'kcName',     label: 'King name',             hint: 'top left' },
@@ -9937,6 +9937,12 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     const ASSIST_POLL_MS = 2500;
     const ASSIST_MAX_WAIT_MS = 5 * 60 * 1000;   // counted from the end of a lava cooldown, like the bot
     const ASSIST_LAVA_MAX_MS = 5 * 60 * 1000;
+    // A Royal Celebration (5-50 tiles) and your own Rebellion (up to 125 tiles) block attacks too.
+    // Since 6.59.1 they are sat out like a lava cooldown instead of ending the wait after 5 min.
+    const ASSIST_CELEB_MAX_MS = 90 * 60 * 1000;
+    const ASSIST_REBELLION_MAX_MS = 3 * 60 * 60 * 1000;
+    // The phases in which nothing is cleared and autobid keeps playing (9g reads this).
+    const ASSIST_SIT_PHASES = ['lava', 'lockout', 'celebration', 'rebellion'];
     const ASSIST_REBID_MS = 8000;              // a bid still/again there this long after the unbid
     const ASSIST_NATIVE_WAIT_MS = 10000;       // how long the game may take to release its button
     const ASSIST_DEAD_REASONS = ['current_king', 'not_logged_in', 'already_in_king_tile'];
@@ -9991,7 +9997,8 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         if (assist.active) {
             state = assist.phase === 'rebid' ? 'warn' : 'wait';
             text = { unbid: 'UNBIDDING\u2026', tile: 'WAITING: IN TILE', lava: 'WAITING: LAVA ' + lavaLeft(),
-                     lockout: 'NEW KING SAFE ' + lavaLeft(),
+                     lockout: 'NEW KING SAFE ' + lavaLeft(), celebration: 'WAITING: CELEBRATION',
+                     rebellion: 'WAITING: YOUR REBELLION',
                      rebid: 'BID CAME BACK', attack: 'ATTACKING\u2026', watch: 'ATTACK RUNNING\u2026',
                      wait: 'WAITING\u2026' }[assist.phase] || 'WAITING\u2026';
             if (assist.tries > 1) text = 'TRY ' + assist.tries + ' \u00b7 ' + text;
@@ -10102,17 +10109,29 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
             }
             if (free) { assist.phase = 'attack'; redrawAssist(); pressWhenReleased(now); return; }
             const lava = reasons.includes('lava_cooldown_active');
-            if (lava || reasons.includes('lockout_active')) {
+            const celeb = reasons.includes('royal_celebration');
+            const rebel = reasons.includes('active_rebellion') || reasons.includes('rebellion_active');
+            if (celeb || rebel || lava || reasons.includes('lockout_active')) {
                 // Sat out, nothing cleared: the cooldown only runs down with the clock, and an
                 // unbid now would throw away a bid for nothing (the bot's lesson of 05.09.).
                 // Since 6.43 the same for lockout_active, the 3 minutes in which a freshly crowned
                 // King cannot be attacked (king.lockoutUntilMs): autobid keeps playing meanwhile.
+                // Since 6.59.1 also a Royal Celebration and your own Rebellion: before, they fell
+                // into the clearing branch below - an !unbid for nothing, then 'NOT FREE IN 5 MIN'.
                 // Each block has its own clock: lava, then a new King's lockout, would add up to 6 min.
-                const kind = lava ? 'lava' : 'lockout';
+                const kind = celeb ? 'celebration' : rebel ? 'rebellion' : lava ? 'lava' : 'lockout';
                 if (assist.phase !== kind) assist.sitSince = now;
                 assist.phase = kind;
-                assist.lavaUntil = Number(lava ? me.lavaCooldownUntilMs : me.lockoutUntilMs) || assist.lavaUntil;
-                if (now - (assist.sitSince || assist.started) > ASSIST_LAVA_MAX_MS) { assistStop(lava ? 'LAVA TOO LONG' : 'KING SAFE TOO LONG'); return; }
+                if (kind === 'lava' || kind === 'lockout') assist.lavaUntil = Number(lava ? me.lavaCooldownUntilMs : me.lockoutUntilMs) || assist.lavaUntil;
+                const lid = kind === 'celebration' ? ASSIST_CELEB_MAX_MS : kind === 'rebellion' ? ASSIST_REBELLION_MAX_MS : ASSIST_LAVA_MAX_MS;
+                if (now - (assist.sitSince || assist.started) > lid) {
+                    assistStop({ lava: 'LAVA TOO LONG', lockout: 'KING SAFE TOO LONG', celebration: 'CELEBRATION TOO LONG', rebellion: 'REBELLION TOO LONG' }[kind]);
+                    return;
+                }
+                // Autobid bids on meanwhile: once the block is over, clearing starts afresh, with one
+                // !unbid of its own and its own 5 minutes.
+                assist.clearStart = 0;
+                assist.unbidSent = false;
             } else {
                 if (!assist.clearStart) assist.clearStart = now;
                 const bidding = reasons.includes('currently_bidding');
@@ -11302,7 +11321,7 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
         // Not during a lava cooldown (6.20): it runs down with the clock alone, and its three
         // minutes are tiles worth playing, as the MarbleMind bot does it. The one !unbid comes
         // once the cooldown is over.
-        if (assist.active && assist.phase !== 'lava' && assist.phase !== 'lockout') return abSet('hold', 'Paused while "Attack when free" is running.');
+        if (assist.active && !ASSIST_SIT_PHASES.includes(assist.phase)) return abSet('hold', 'Paused while "Attack when free" is running.');
         if (!holdsTabLock(now)) return abSet('hold', 'Another tab is bidding for you, this one stands by.');
         if (!tapInstalled) return abSet('alert', 'The lanes cannot be read in this browser, so nothing is bid.');
         if (!lanes.size) {
@@ -13928,12 +13947,15 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.59';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.59.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.59.1', date: '2026-10-08', items: [
+            'Attack when free waits out a Royal Celebration and your own Rebellion, the way it waits out a lava cooldown: your autobid keeps playing, no unbid is sent, and the attack goes in right after. Before, it sent an unbid for nothing and gave up after five minutes ("NOT FREE IN 5 MIN").',
+        ] },
         { v: '6.59', date: '2026-10-08', items: [
             'Windows can be resized at every edge and corner now, not only at the grip bottom right.',
             'Achievements and the new inventory have a Reload button in their header: the data is loaded again, and you stay on the page and the category you are on.',

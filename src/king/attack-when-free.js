@@ -19,6 +19,12 @@
     const ASSIST_POLL_MS = 2500;
     const ASSIST_MAX_WAIT_MS = 5 * 60 * 1000;   // counted from the end of a lava cooldown, like the bot
     const ASSIST_LAVA_MAX_MS = 5 * 60 * 1000;
+    // A Royal Celebration (5-50 tiles) and your own Rebellion (up to 125 tiles) block attacks too.
+    // Since 6.59.1 they are sat out like a lava cooldown instead of ending the wait after 5 min.
+    const ASSIST_CELEB_MAX_MS = 90 * 60 * 1000;
+    const ASSIST_REBELLION_MAX_MS = 3 * 60 * 60 * 1000;
+    // The phases in which nothing is cleared and autobid keeps playing (9g reads this).
+    const ASSIST_SIT_PHASES = ['lava', 'lockout', 'celebration', 'rebellion'];
     const ASSIST_REBID_MS = 8000;              // a bid still/again there this long after the unbid
     const ASSIST_NATIVE_WAIT_MS = 10000;       // how long the game may take to release its button
     const ASSIST_DEAD_REASONS = ['current_king', 'not_logged_in', 'already_in_king_tile'];
@@ -73,7 +79,8 @@
         if (assist.active) {
             state = assist.phase === 'rebid' ? 'warn' : 'wait';
             text = { unbid: 'UNBIDDING\u2026', tile: 'WAITING: IN TILE', lava: 'WAITING: LAVA ' + lavaLeft(),
-                     lockout: 'NEW KING SAFE ' + lavaLeft(),
+                     lockout: 'NEW KING SAFE ' + lavaLeft(), celebration: 'WAITING: CELEBRATION',
+                     rebellion: 'WAITING: YOUR REBELLION',
                      rebid: 'BID CAME BACK', attack: 'ATTACKING\u2026', watch: 'ATTACK RUNNING\u2026',
                      wait: 'WAITING\u2026' }[assist.phase] || 'WAITING\u2026';
             if (assist.tries > 1) text = 'TRY ' + assist.tries + ' \u00b7 ' + text;
@@ -184,17 +191,29 @@
             }
             if (free) { assist.phase = 'attack'; redrawAssist(); pressWhenReleased(now); return; }
             const lava = reasons.includes('lava_cooldown_active');
-            if (lava || reasons.includes('lockout_active')) {
+            const celeb = reasons.includes('royal_celebration');
+            const rebel = reasons.includes('active_rebellion') || reasons.includes('rebellion_active');
+            if (celeb || rebel || lava || reasons.includes('lockout_active')) {
                 // Sat out, nothing cleared: the cooldown only runs down with the clock, and an
                 // unbid now would throw away a bid for nothing (the bot's lesson of 05.09.).
                 // Since 6.43 the same for lockout_active, the 3 minutes in which a freshly crowned
                 // King cannot be attacked (king.lockoutUntilMs): autobid keeps playing meanwhile.
+                // Since 6.59.1 also a Royal Celebration and your own Rebellion: before, they fell
+                // into the clearing branch below - an !unbid for nothing, then 'NOT FREE IN 5 MIN'.
                 // Each block has its own clock: lava, then a new King's lockout, would add up to 6 min.
-                const kind = lava ? 'lava' : 'lockout';
+                const kind = celeb ? 'celebration' : rebel ? 'rebellion' : lava ? 'lava' : 'lockout';
                 if (assist.phase !== kind) assist.sitSince = now;
                 assist.phase = kind;
-                assist.lavaUntil = Number(lava ? me.lavaCooldownUntilMs : me.lockoutUntilMs) || assist.lavaUntil;
-                if (now - (assist.sitSince || assist.started) > ASSIST_LAVA_MAX_MS) { assistStop(lava ? 'LAVA TOO LONG' : 'KING SAFE TOO LONG'); return; }
+                if (kind === 'lava' || kind === 'lockout') assist.lavaUntil = Number(lava ? me.lavaCooldownUntilMs : me.lockoutUntilMs) || assist.lavaUntil;
+                const lid = kind === 'celebration' ? ASSIST_CELEB_MAX_MS : kind === 'rebellion' ? ASSIST_REBELLION_MAX_MS : ASSIST_LAVA_MAX_MS;
+                if (now - (assist.sitSince || assist.started) > lid) {
+                    assistStop({ lava: 'LAVA TOO LONG', lockout: 'KING SAFE TOO LONG', celebration: 'CELEBRATION TOO LONG', rebellion: 'REBELLION TOO LONG' }[kind]);
+                    return;
+                }
+                // Autobid bids on meanwhile: once the block is over, clearing starts afresh, with one
+                // !unbid of its own and its own 5 minutes.
+                assist.clearStart = 0;
+                assist.unbidSent = false;
             } else {
                 if (!assist.clearStart) assist.clearStart = now;
                 const bidding = reasons.includes('currently_bidding');
