@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MarbleLuceFall
 // @namespace    http://tampermonkey.net/
-// @version      6.57
+// @version      6.57.1
 // @description  Layout overhaul for Marble Crownfall: 50+ colour themes, pages as windows over the game, autobid with risk protection and tile lists, unbid and extra ticket chips, quest alarm and euro prices in the shop, claim all dailies, a new inventory with loadouts, adjustable reign read-outs with the toll on the tile, beverage bar, auto beverages on the throne, enhanced chat, hide any cosmetic, a music player with a movable bar, performance levels, how-to and what’s new.
 // @author       DreamingLucie
 // @match        *://*.marblecrownfall.com/*
@@ -224,8 +224,8 @@
         const asset = p => `/immutable-assets/${cfg.build}/${p}`;
         const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const RANK = { unique: 0, exclusive: 1, cosmic: 2, ethereal: 3, mythic: 4, legendary: 5, epic: 6, rare: 7, common: 8, default: 9 };
-        const LOOK = {   // tile, fill, line - the game's rarity palette
-            unique: ['#4a1238', '#ff4fcf', '#ffb3ea'], exclusive: ['#2a2c31', '#f7fbff', '#ffffff'],
+        const LOOK = {   // tile, fill, line - the game's rarity palette; 4th: ground of the picture where it is not the tile
+            unique: ['#4a1238', '#ff4fcf', '#ffb3ea', '#7a1a5c'], exclusive: ['#2a2c31', '#ffffff', '#ffffff', '#c3cbd6'],
             cosmic: ['#111013', '#272330', '#514a61'], ethereal: ['#534351', '#c6a0c1', '#e0d2de'],
             mythic: ['#321e1d', '#992824', '#d66a66'], legendary: ['#3d3021', '#bc7824', '#e1b16b'],
             epic: ['#241a2c', '#592285', '#a862e2'], rare: ['#1c2633', '#20569d', '#5da4e1'],
@@ -233,7 +233,7 @@
         };
         const rar = i => String((i && i.rarity) || 'default').trim().toLowerCase() || 'default';
         const rarName = r => r.charAt(0).toUpperCase() + r.slice(1);
-        const look = r => { const c = LOOK[r] || LOOK.default; return `--mi-bg:${c[0]};--mi-fill:${c[1]};--mi-line:${c[2]}`; };
+        const look = r => { const c = LOOK[r] || LOOK.default; return `--mi-bg:${c[0]};--mi-fill:${c[1]};--mi-line:${c[2]};--mi-pic:${c[3] || c[0]}`; };
         const NO_CROWN = 'system_no_crown', NO_CHAT = 'system_no_chat_treatment:';
         const ICON = {
             overview: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>',
@@ -434,6 +434,7 @@
                     const still = !big || p.id === 'marble_borders' || p.wreath;   // wreath full = the whole king tile
                     keep(fn(host, recipe, { compact: still, context, companionBorder: c.border && c.border.recipe, companionTrail: (big && !still) || p.aura ? c.trail && c.trail.recipe : null }));
                     if (big && p.id === 'marble_borders') requestAnimationFrame(() => setTimeout(() => zoomTo(host.querySelector(':scope > svg')), 120));
+                    requestAnimationFrame(() => clearGround(host));
                 }
             } catch (e) {
                 host.innerHTML = '<div class="mi-none">Preview unavailable</div>';
@@ -462,6 +463,20 @@
             const bx = p0.x, by = p0.y, bw = p1.x - p0.x, bh = p1.y - p0.y;
             const side = Math.max(bw, bh) * 1.25;
             svg.setAttribute('viewBox', `${bx + bw / 2 - side / 2} ${by + bh / 2 - side / 2} ${side} ${side}`);
+        }
+
+        // The marble renderers lay a dark square under their picture (a rect over the whole viewBox);
+        // it would hide the rarity colour behind the picture. Trails draw theirs into one image -
+        // that one stays.
+        function clearGround(host) {
+            const svg = host && host.querySelector(':scope > svg');
+            const vb = svg && svg.viewBox && svg.viewBox.baseVal;
+            if (!vb || !vb.width) return;
+            for (const r of svg.querySelectorAll(':scope > rect')) {
+                const w = r.width && r.width.baseVal;
+                const full = (w && w.unitType === 2 && w.valueInSpecifiedUnits >= 90) || (w && w.value >= vb.width * 0.9);
+                if (full) r.style.fill = 'transparent';
+            }
         }
 
         // ---- layout ------------------------------------------------------------------------------
@@ -566,7 +581,7 @@
                     <div class="mi-ctl">${ctl}</div></div>
                 <div class="mi-filters">
                     <input type="search" class="mi-search" data-f="q" placeholder="Search ${esc((p.plural || p.label).toLowerCase())}" value="${esc(f.q)}">
-                    ${rars.length > 1 ? `<div class="mi-rars"><button type="button" class="mi-rar" data-rar="" aria-pressed="${!f.rarity}">All <i>${m.items.length}</i></button>${rars.map(r =>
+                    ${rars.length && p.kind !== 'title' && p.kind !== 'toll' ? `<div class="mi-rars"><button type="button" class="mi-rar" data-rar="" aria-pressed="${!f.rarity}">All <i>${m.items.length}</i></button>${rars.map(r =>
                         `<button type="button" class="mi-rar" data-rar="${r}" style="${look(r)}" aria-pressed="${f.rarity === r}"><b></b>${rarName(r)} <i>${groups.get(r)}</i></button>`).join('')}</div>` : ''}
                     <button type="button" class="mi-rar" data-f="eq" aria-pressed="${f.eq}">Equipped</button>
                     ${pooled(m) ? `<button type="button" class="mi-rar" data-f="pool" aria-pressed="${f.pool}">In pool</button>` : ''}
@@ -625,8 +640,16 @@
         }
         function card(m, i, fid, textOnly) {
             const id = itemId(i), r = rar(i);
+            if (textOnly) {
+                // Titles and tolls: the name is the card; the occasions it is used for underneath, short.
+                const ctx = m.contexts.filter(c => String(c.selectedInventoryItemId) === id)
+                    .map(c => `<span class="mi-badge" data-tone="eq">${esc(String(c.label).replace(/\s+default$/i, ''))}</span>`).join('');
+                return `<article class="inventoryCard mi-card mi-card--text" data-id="${esc(id)}" data-rarity="${esc(r)}" aria-selected="${id === fid}" tabindex="0">
+                    <div class="mi-thumb mi-thumb--text">${esc(i.displayName)}</div><h3>${esc(i.displayName || id)}</h3>
+                    <div class="mi-ctx">${ctx}</div></article>`;
+            }
             return `<article class="inventoryCard mi-card" data-id="${esc(id)}" data-rarity="${esc(r)}" style="${look(r)}" aria-selected="${id === fid}" tabindex="0">
-                ${textOnly ? `<div class="mi-thumb mi-thumb--text">${esc(i.displayName)}</div>` : `<div class="mi-thumb" data-thumb="${esc(id)}"></div>`}
+                <div class="mi-thumb" data-thumb="${esc(id)}"></div>
                 <h3>${esc(i.displayName || id)}</h3>
                 <div class="mi-card__foot"><span class="mi-dot"></span><span class="mi-card__rar">${r === 'default' ? '' : esc(rarName(r))}</span><span class="mi-badges">${badges(m, i)}</span></div>
             </article>`;
@@ -689,7 +712,7 @@
                 ${tabs}
                 ${textOnly ? `<div class="mi-big mi-big--text">${esc(i.displayName)}</div>` : `<div class="mi-big mi-big--${p.kind}${st.fullTile && p.kind === 'crown' ? ' mi-big--tile' : ''}${p.wide ? ' mi-big--wide' : ''}"></div>`}
                 <h2>${esc(i.displayName || id)}</h2>
-                ${r !== 'default' ? `<span class="mi-pill">${esc(rarName(r))}</span>` : ''}
+                ${r !== 'default' && !textOnly ? `<span class="mi-pill">${esc(rarName(r))}</span>` : ''}
                 ${actions}
                 <div class="mi-meta">${prov}${comp}</div>
             </div>`;
@@ -770,9 +793,16 @@
             $body.querySelectorAll('.mi-card').forEach(c => {
                 const i = m.byId.get(c.dataset.id);
                 if (!i) return;
-                const b = c.querySelector('.mi-badges');
-                const html = badges(m, i);
-                if (b && b.innerHTML !== html) b.innerHTML = html;
+                if (c.classList.contains('mi-card--text')) {
+                    const fresh = card(m, i, '', true), t = document.createElement('template');
+                    t.innerHTML = fresh.trim();
+                    const ctx = c.querySelector('.mi-ctx'), nctx = t.content.querySelector('.mi-ctx');
+                    if (ctx && nctx && ctx.innerHTML !== nctx.innerHTML) ctx.innerHTML = nctx.innerHTML;
+                } else {
+                    const b = c.querySelector('.mi-badges');
+                    const html = badges(m, i);
+                    if (b && b.innerHTML !== html) b.innerHTML = html;
+                }
                 c.setAttribute('aria-selected', String(c.dataset.id === fid));
             });
         }
@@ -971,14 +1001,23 @@
         .mi .mi-card.inventoryCard:hover { border-color: color-mix(in srgb, var(--mi-line) 85%, transparent); transform: translateY(-1px); }
         .mi .mi-card.inventoryCard[aria-selected=true] { border-color: var(--gold-soft, #ffe4a4); box-shadow: 0 0 0 1px var(--gold-soft, #ffe4a4), 0 6px 18px -8px rgba(0, 0, 0, .7); }
         .mi .mi-card.inventoryCard:focus-visible { outline: 2px solid var(--blue, #5ca7d8); outline-offset: 2px; }
-        .mi-thumb { position: relative; aspect-ratio: 1 / 1; border-radius: 7px; overflow: hidden; background: rgba(0, 0, 0, .28); display: grid; place-items: center; }
+        /* the picture's ground in the rarity's colour, as the game's crown cards (Exclusive white); !important on display:
+           some renderers set their host to display:block, which put wreath and trail in the corner */
+        .mi-thumb, .mi-big, .mi-slot__pic { background: radial-gradient(115% 95% at 50% 32%, color-mix(in srgb, var(--mi-fill) 58%, var(--mi-pic)), var(--mi-pic) 72%) !important;
+            display: grid !important; place-items: center; justify-self: stretch; }
+        .mi-thumb { position: relative; aspect-ratio: 1 / 1; border-radius: 7px; overflow: hidden; }
         .mi-grid--wide .mi-thumb { aspect-ratio: 2.6 / 1; }
         .mi-grid--chat .mi-thumb { aspect-ratio: auto; min-height: 64px; padding: 6px; place-items: stretch; }
-        .mi-thumb--text { aspect-ratio: auto; min-height: 58px; padding: 10px; font-size: 15px; font-weight: 800; text-align: center; color: var(--gold-soft, #ffe4a4); }
+        .mi-thumb--text, .mi-big--text { background: color-mix(in srgb, var(--panel-3, #0b0f13) 70%, transparent) !important; }
+        .mi-thumb--text { aspect-ratio: auto; min-height: 44px; padding: 8px; font-size: 16px; font-weight: 800; text-align: center; color: var(--gold-soft, #ffe4a4); }
+        .mi .mi-card.mi-card--text { --mi-line: var(--line-strong, #456079); --mi-bg: var(--panel-2, #151d27); gap: 5px; }
+        .mi-ctx { display: flex; flex-wrap: wrap; gap: 3px; min-height: 0; }
+        .mi-ctx:empty { display: none; }
+        .mi-ctx .mi-badge { font-size: 10px; padding: 2px 6px; white-space: nowrap; }
         .mi-thumb > * { max-width: 100%; max-height: 100%; }
         .mi-thumb > p.inventoryMuted, .mi-big > p.inventoryMuted, .mi-slot__pic > p.inventoryMuted { display: none; }   /* "Border available" under the picture */
         /* !important: the aura renderer sets width/height 320px inline */
-        .mi-thumb > svg, .mi-thumb > canvas, .mi-slot__pic > svg { width: 100% !important; height: 100% !important; max-width: 100%; }
+        .mi-thumb > svg, .mi-thumb > canvas { width: 100% !important; height: 100% !important; max-width: 100%; }
         .mi-thumb .crownItemPreviewStage { min-height: 0 !important; height: 100%; }
         .mi-grid--text .mi-card h3 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }   /* the name is the picture; h3 stays for the loadout bar */
         .mi-card h3 { margin: 0; font-size: 12.5px; font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -997,8 +1036,7 @@
             background: radial-gradient(120% 60% at 50% 0%, color-mix(in srgb, var(--mi-fill) 22%, transparent), transparent 70%); border-radius: var(--mi-r); min-height: 100%; box-sizing: border-box; }
         .mi-tabs { display: flex; gap: 4px; justify-self: center; }
         .mi-tabs button[aria-pressed=true] { border-color: var(--gold, #d6aa48); color: var(--gold-soft, #ffe4a4); background: color-mix(in srgb, var(--gold, #d6aa48) 15%, transparent); }
-        .mi-big { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden; display: grid; place-items: center;
-            background: rgba(0, 0, 0, .3); border: 1px solid color-mix(in srgb, var(--mi-line) 45%, transparent); }
+        .mi-big { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 10px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--mi-line) 45%, transparent); }
         .mi-big > svg, .mi-big > canvas { width: 100% !important; height: 100% !important; max-width: 100%; }
         .mi-big--crown .kingPfpCrownPreview { width: 82%; }
         .mi-big--tile { aspect-ratio: 640 / 1080; max-height: 62vh; width: auto; justify-self: center; }
@@ -1018,13 +1056,16 @@
         .mi-over { display: grid; gap: 18px; }
         .mi-over h2 { margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted, #95a9ba); }
         .mi-over__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
-        .mi .mi-slot { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 6px; align-content: start; padding: 10px; border-radius: 12px; --mi-bg: #1b2128; --mi-fill: #3a4654; --mi-line: #8796a6;
+        .mi .mi-slot { all: unset; box-sizing: border-box; cursor: pointer; display: grid; gap: 6px; align-content: start; padding: 10px; border-radius: 12px; --mi-bg: #1b2128; --mi-fill: #3a4654; --mi-line: #8796a6; --mi-pic: #1b2128;
             border: 1px solid color-mix(in srgb, var(--mi-line) 40%, transparent);
             background: linear-gradient(165deg, color-mix(in srgb, var(--mi-bg) 85%, transparent), color-mix(in srgb, var(--panel-3, #0b0f13) 75%, transparent)); }
         .mi .mi-slot:hover { border-color: color-mix(in srgb, var(--mi-line) 90%, transparent); }
         .mi-slot__label { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted, #95a9ba); }
         .mi-slot__label svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-        .mi-slot__pic { height: 150px; border-radius: 8px; overflow: hidden; background: rgba(0, 0, 0, .28); display: grid; place-items: center; }
+        .mi-slot__pic { height: 150px; width: 100%; box-sizing: border-box; border-radius: 8px; overflow: hidden; }
+        .mi-slot__pic > svg { height: 100% !important; width: auto !important; max-width: 100%; }
+        .mi-slot__pic > .kingPfpCrownPreview { height: 92%; width: auto; aspect-ratio: 1; margin: auto; }
+        .mi-slot[data-slot=royal_title] .mi-slot__pic, .mi-slot[data-slot=default_toll] .mi-slot__pic { background: color-mix(in srgb, var(--panel-3, #0b0f13) 70%, transparent) !important; }
         .mi-slot__pic > svg, .mi-slot__pic > canvas { width: 100%; height: 100%; }
         .mi-slot__pic .kingPfpCrownPreview { height: 92%; width: auto; aspect-ratio: 1; }
         .mi-slot__pic .crownItemPreviewStage { min-height: 0 !important; height: 100%; }
@@ -13331,12 +13372,18 @@ ${P} .inventoryUnlockClose:hover { opacity: 1; color: ${c(0.8, 0.12)}; }`;
     //
     // The version comes from the userscript manager (GM_info), so it cannot drift from @version;
     // the fallback is for managers without GM_info and has to be kept in step by hand.
-    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.57';
+    const SCRIPT_VERSION = (typeof GM_info !== 'undefined' && GM_info && GM_info.script && GM_info.script.version) || '6.57.1';
     const HOWTO_KEY = '#howto', CHANGELOG_KEY = '#changelog', WHATSNEW_KEY = '#whatsnew';
     const WHATSNEW_SEEN = 'mcfo_whatsnew_seen';   // the version whose What's new was dismissed for good
 
     // Newest first. The first entry is what What's new shows after a fresh install.
     const CHANGELOG = [
+        { v: '6.57.1', date: '2026-10-08', items: [
+            'New inventory: every picture sits on the colour of its rarity, so the rarities stand apart at a glance - Exclusive on white, as the game shows its crowns.',
+            'Default Tolls and Royal Titles: smaller cards, and the occasions a toll or title is used for in a short row of their own instead of the large circles.',
+            'Overview: wreath, trail and aura are centred in their slots.',
+            'Rarity chips also for categories with a single rarity (Rebellion Auras).',
+        ] },
         { v: '6.57', date: '2026-10-08', items: [
             'A new inventory: categories down the left, with an Overview on top that shows everything you wear (crown, wreath, titles, tolls, border, trail, indicator, aura and all four chat slots) - click a slot to change it.',
             'Each category is a gallery: search, rarity chips with counts, Equipped and In pool filters and sorting above the cards; the right column shows the item large, with Equip, Add to pool, its colours and where it came from. Double-click (or Enter on) a card to equip it.',
